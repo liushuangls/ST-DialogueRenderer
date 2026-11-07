@@ -69,6 +69,23 @@ test('code examples and embedded frontend nodes are not claimed, moved or replac
   view.dispose(); f.dom.window.close();
 });
 
+test('preset-style closing separator renders speech and Markdown thoughts without changing source', () => {
+  const f = fixture();
+  const content = addMessage(f.document, 0,
+    '@bubble:Alice|疲惫|[你好。]|\n\n@bubble:Alice|欲言又止|[*先想一想。*]|');
+  const before = content.innerHTML;
+  const view = decorateMessage(content, f.assets);
+  assert.equal(content.querySelectorAll('.dc-msg').length, 2);
+  assert.equal(content.querySelector('[data-thought="0"] .dc-msg-text-content').textContent, '你好。');
+  assert.equal(content.querySelector('[data-thought="1"] .dc-msg-text-content').textContent, '先想一想。');
+  for (const node of content.querySelectorAll('.dc-msg-text-content')) assert.equal(node.textContent.includes('|'), false);
+  for (const line of ['@bubble:A|平静|[台词]||', '@bubble:A|平静|[台词]|多余字段', '@bubble:A||[台词]|']) {
+    assert.equal(parseBubbleLine(line), null);
+  }
+  view.dispose(); assert.equal(content.innerHTML, before);
+  f.dom.window.close();
+});
+
 test('late avatar completion and pre-aborted render cannot mutate a released message', async () => {
   const f = fixture(); const content = addMessage(f.document, 0, raw);
   let resolve;

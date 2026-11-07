@@ -23,7 +23,8 @@ export function recentAiMessageIds(chat, count) {
 }
 
 export function parseBubbleLine(line) {
-  const match = /^\s*@bubble:([^|\r\n]+)\|([^|\r\n]+)\|\[([^|[\]\r\n]+)\]\s*$/.exec(line);
+  // Some presets/models append one closing separator; it is not part of the dialogue.
+  const match = /^\s*@bubble:([^|\r\n]+)\|([^|\r\n]+)\|\[([^|[\]\r\n]+)\]\s*\|?\s*$/.exec(line);
   if (!match) return null;
   const name = match[1].trim();
   const mood = match[2].trim();
