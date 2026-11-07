@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.2";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.2";
-import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.2";
-import { STORE_AVATARS, STORE_MOOD_AVATARS } from "./storage.js?v=2.0.2";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.2";
-import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.2";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.3";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.3";
+import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.3";
+import { STORE_AVATARS } from "./storage.js?v=2.0.3";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.3";
+import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.3";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_FETCH_TIMEOUT_MS = 8000;
@@ -926,9 +926,6 @@ class AvatarManagerPanel {
         <div style="color:#555; font-size:11px; margin-top:4px;">支持 JPG / PNG / GIF / WebP，最大 2MB，推荐 200×200 正方形</div>
         <input id="bam-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;" />
       </div>
-      <div style="text-align:center; margin:0 20px 8px;">
-        <button id="bam-btn-add-remote-avatar" style="background:none; border:1px dashed rgba(74,108,247,0.3); color:#8ba4f7; padding:6px 16px; border-radius:8px; cursor:pointer; font-size:12px; width:100%;">🔗 使用远程图片 URL</button>
-      </div>
 
       <div id="bam-alias-input-area" style="display:none; margin:8px 20px; padding:12px 16px; background:rgba(255,255,255,0.04); border-radius:10px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
@@ -964,10 +961,6 @@ class AvatarManagerPanel {
 
       <div id="bam-stats" style="padding:10px 20px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px; color:#555; text-align:center;">已存储: 0 张 | 总计: 0 KB</div>
 
-      <div id="bam-remote-actions" style="padding:6px 20px 10px; display:flex; gap:8px; flex-wrap:wrap; justify-content:center; border-top:1px solid rgba(255,255,255,0.04);">
-        <button id="bam-btn-fetch-remote" style="background:rgba(74,108,247,0.12); border:1px solid rgba(74,108,247,0.25); color:#b9c7ff; padding:5px 12px; border-radius:6px; cursor:pointer; font-size:11px;">拉取远程头像</button>
-        <button id="bam-btn-clear-remote-cache" style="background:rgba(255,80,80,0.08); border:1px solid rgba(255,80,80,0.2); color:#e88; padding:5px 12px; border-radius:6px; cursor:pointer; font-size:11px;">清除远程缓存</button>
-      </div>
 
     </div>
 
@@ -1238,110 +1231,6 @@ class AvatarManagerPanel {
       }
     });
 
-    // - 远程头像操作 -
-    $('#bam-btn-fetch-remote')?.addEventListener('click', async () => {
-      const btn = doc.getElementById('bam-btn-fetch-remote');
-      const originalText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = '检查中...';
-
-      const charId = this._getActiveCharId();
-      let fetched = 0, failed = 0;
-      const compOpts = await getCompressOptions(this.db);
-
-      // 收集所有需要拉取的记录
-      const tasks = [];
-
-      const avatars = await this.db.list(charId);
-      for (const av of avatars) {
-        const record = await this.db.get(charId, av.displayName);
-        if (record && record.sourceUrl && record.sourceUrl !== 'null' && !record.imageBlob) {
-          tasks.push({ type: 'avatar', name: av.displayName, record });
-        }
-      }
-
-      const allMoods = await new Promise((resolve, reject) => {
-        const req = this.db.db.transaction(STORE_MOOD_AVATARS, 'readonly').objectStore(STORE_MOOD_AVATARS).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(new Error('查询失败'));
-      });
-      for (const r of allMoods.filter(r => r.charId === charId && r.sourceUrl && r.sourceUrl !== 'null' && !r.imageBlob)) {
-        tasks.push({ type: 'mood', record: r });
-      }
-
-      if (!tasks.length) {
-        btn.textContent = originalText;
-        btn.disabled = false;
-        alert('没有需要拉取的远程头像');
-        return;
-      }
-
-      // 逐个拉取并更新进度
-      for (let i = 0; i < tasks.length; i++) {
-        btn.textContent = `拉取中 ${i + 1}/${tasks.length}...`;
-        const task = tasks[i];
-        try {
-          const resp = await fetch(task.record.sourceUrl);
-          if (!resp.ok) { failed++; continue; }
-          let blob = await resp.blob();
-          blob = await compressImage(blob, compOpts);
-          if (task.type === 'avatar') {
-            await this.db.update(charId, task.name, blob);
-          } else {
-            task.record.imageBlob = blob;
-            task.record.fileSize = blob.size;
-            task.record.mimeType = blob.type || task.record.mimeType;
-            task.record.updatedAt = Date.now();
-            await this.db._put(STORE_MOOD_AVATARS, task.record);
-          }
-          fetched++;
-        } catch (_) { failed++; }
-      }
-
-      btn.textContent = originalText;
-      btn.disabled = false;
-      alert(`远程头像拉取完成: ${fetched} 张成功${failed ? ', ' + failed + ' 张失败' : ''}`);
-      await this._refreshList();
-    });
-    $('#bam-btn-clear-remote-cache')?.addEventListener('click', async () => {
-      if (!confirm('确定清除所有远程头像的本地缓存？下次渲染时会重新拉取。')) return;
-      const charId = this._getActiveCharId();
-      let cleared = 0;
-
-      // 主头像
-      const allAvatars = await new Promise((resolve, reject) => {
-        const req = this.db.db.transaction(STORE_AVATARS, 'readonly').objectStore(STORE_AVATARS).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(new Error('查询失败'));
-      });
-      const prefix = charId + CHAR_ID_SEPARATOR;
-      for (const r of allAvatars.filter(r => r.alias.startsWith(prefix) && r.sourceUrl && r.sourceUrl !== 'null')) {
-        r.imageBlob = null;
-        r.fileSize = 0;
-        r.updatedAt = Date.now();
-        await this.db._put(STORE_AVATARS, r);
-        cleared++;
-      }
-
-      // 情绪差分头像
-      const allMoods = await new Promise((resolve, reject) => {
-        const req = this.db.db.transaction(STORE_MOOD_AVATARS, 'readonly').objectStore(STORE_MOOD_AVATARS).getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(new Error('查询失败'));
-      });
-      for (const r of allMoods.filter(r => r.charId === charId && r.sourceUrl && r.sourceUrl !== 'null')) {
-        r.imageBlob = null;
-        r.fileSize = 0;
-        r.updatedAt = Date.now();
-        await this.db._put(STORE_MOOD_AVATARS, r);
-        cleared++;
-      }
-
-      alert(`已清除 ${cleared} 张远程头像缓存`);
-      this.db._blobUrlCache.clear();
-      await this._refreshList();
-    });
-
     // - 缩略图点击大图预览（头像 + 情绪差分统一处理）-
     const container = doc.getElementById('bam-container');
     container?.addEventListener('click', (e) => {
@@ -1354,27 +1243,6 @@ class AvatarManagerPanel {
     });
 
     // - 头像管理 Tab 事件 -
-
-    $('#bam-btn-add-remote-avatar')?.addEventListener('click', async () => {
-      const name = prompt('角色名（用于渲染时匹配）:');
-      if (!name || !name.trim()) return;
-      const url = prompt('远程图片 URL（如 https://files.catbox.moe/xxx.png）:');
-      if (!url || !url.trim()) return;
-      const charId = this._getActiveCharId();
-      try {
-        const existing = await this.db.get(charId, name.trim());
-        if (existing) {
-          this.db._revokeCachedUrl(buildAvatarKey(charId, name.trim()));
-          await this.db._put(STORE_AVATARS, {
-            ...existing, imageBlob: null, sourceUrl: url.trim(), syncedUrl: null,
-            fileSize: 0, updatedAt: Date.now()
-          });
-        } else {
-          await this.db.add(charId, name.trim(), null, { sourceUrl: url.trim(), mimeType: 'image/webp' });
-        }
-        await this._refreshList();
-      } catch (err) { alert('添加失败: ' + err.message); }
-    });
 
     $('#bam-upload-area').addEventListener('click', () => $('#bam-file-input').click());
 
@@ -1447,8 +1315,6 @@ class AvatarManagerPanel {
       try {
         const result = await this.db.importFromFile(file, this._getActiveCharId());
         let msg = `导入完成: 成功 ${result.imported} 项`;
-        if (result.linked) msg += `\n其中 ${result.linked} 项仅含图片链接，备份中没有图片文件，显示仍依赖链接可用`;
-        if (result.skipped) msg += `, 跳过 ${result.skipped} 项`;
         if (result.errors?.length) msg += `\n错误: ${result.errors.join(', ')}`;
         alert(msg);
         await this.onRefresh();
@@ -1480,7 +1346,6 @@ class AvatarManagerPanel {
       const moodId = moodBtn.dataset.moodId;
       if (moodBtn.classList.contains('bam-mood-upload')) this._handleMoodUpload(name, moodId);
       else if (moodBtn.classList.contains('bam-mood-delete')) this._handleMoodDelete(name, moodId);
-      else if (moodBtn.classList.contains('bam-mood-remote')) this._handleMoodRemoteUrl(name, moodId);
     });
 
     // - 正文美化 Tab 事件 -
@@ -1939,9 +1804,7 @@ class AvatarManagerPanel {
       const blobUrl = this.db._recordUrl(buildAvatarKey(charId, avatar.displayName), record);
       const sourceInfo = record?.syncedUrl
         ? '<span style="color:#7ee787;font-size:9px;">多端✓</span>'
-        : (record?.sourceUrl && record.sourceUrl !== 'null'
-          ? '<span style="color:#58a6ff;font-size:9px;">远程</span>'
-          : '<span style="color:#aaa;font-size:9px;">本地待同步</span>');
+        : '<span style="color:#aaa;font-size:9px;">本地待同步</span>';
       return this._avatarItemHTML(avatar, blobUrl, color, sourceInfo);
     }));
     const html = rows.join('');
@@ -2001,9 +1864,9 @@ class AvatarManagerPanel {
       if (ma) {
         const blobUrl = await this.db.getMoodAvatarBlobUrl(charId, name, group.id);
         const safeMoodSrc = blobUrl || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-        const moodSourceTag = (ma.sourceUrl && ma.sourceUrl !== 'null')
-          ? (ma.imageBlob ? '<span style="color:#58a6ff;font-size:9px;">远程✓</span>' : '<span style="color:#eab308;font-size:9px;">远程⏳</span>')
-          : '<span style="color:#7ee787;font-size:9px;">本地</span>';
+        const moodSourceTag = ma.syncedUrl
+          ? '<span style="color:#7ee787;font-size:9px;">多端✓</span>'
+          : '<span style="color:#aaa;font-size:9px;">本地待同步</span>';
         html += `<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">
           ${colorDot}
           <span style="width:40px; color:#aaa; font-size:12px;">${group.label}</span>
@@ -2018,7 +1881,6 @@ class AvatarManagerPanel {
           ${colorDot}
           <span style="width:40px; color:#aaa; font-size:12px;">${group.label}</span>
           <button class="bam-mood-action bam-mood-upload" data-name="${safeName}" data-mood-id="${group.id}" style="flex:1; background:rgba(255,255,255,0.04); border:1px dashed rgba(255,255,255,0.1); color:#666; padding:4px 0; border-radius:4px; cursor:pointer; font-size:11px; text-align:center;">点击上传</button>
-          <button class="bam-mood-action bam-mood-remote" data-name="${safeName}" data-mood-id="${group.id}" style="background:none; border:1px dashed rgba(74,108,247,0.3); color:#8ba4f7; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px; flex-shrink:0;">🔗</button>
         </div>`;
       }
     }
@@ -2052,35 +1914,6 @@ class AvatarManagerPanel {
       }
     };
     input.click();
-  }
-
-  async _handleMoodRemoteUrl(name, moodId) {
-    const url = prompt(`输入 "${name}" 的 ${moodId} 情绪差分远程图片 URL:`);
-    if (!url || !url.trim()) return;
-    const charId = this._getActiveCharId();
-    try {
-      const id = buildMoodAvatarKey(charId, name, moodId);
-      const existing = await this.db._getByKey(STORE_MOOD_AVATARS, id);
-      if (existing) {
-        this.db._revokeCachedUrl('mood_' + id);
-        existing.imageBlob = null;
-        existing.sourceUrl = url.trim();
-        existing.syncedUrl = null;
-        existing.fileSize = 0;
-        existing.updatedAt = Date.now();
-        await this.db._put(STORE_MOOD_AVATARS, existing);
-      } else {
-        const record = {
-          id, charId, alias: name.trim().toLowerCase(), moodId,
-          imageBlob: null, sourceUrl: url.trim(), syncedUrl: null,
-          mimeType: 'image/webp', fileName: '',
-          fileSize: 0, width: 0, height: 0,
-          createdAt: Date.now(), updatedAt: Date.now()
-        };
-        await this.db._put(STORE_MOOD_AVATARS, record);
-      }
-      await this._renderMoodPanel(name);
-    } catch (err) { alert('设置失败: ' + err.message); }
   }
 
   async _handleMoodDelete(name, moodId) {

@@ -374,22 +374,22 @@ test('avatar and mood JSON/ZIP round trips work without CG stores', async () => 
   try {
     const scope = '_global_';
     await a.db.add(scope, 'Alice', new Blob(['base-avatar'], { type: 'image/png' }), {
-      fileName: 'alice.png', sourceUrl: 'https://example.invalid/alice.png',
+      fileName: 'alice.png',
     });
     await a.db.addMoodAvatar(scope, 'Alice', 'mood-proud', new Blob(['proud-avatar'], { type: 'image/png' }), {
-      fileName: 'proud.png', sourceUrl: 'https://example.invalid/proud.png',
+      fileName: 'proud.png',
     });
     const colorKey = a.api.buildColorConfigKey(scope, 'Alice');
     await a.db.setConfig(colorKey, '#123456');
-    const payload = await a.db.exportCharacterData(scope, { urlOnly: true });
+    const payload = await a.db.exportCharacterData(scope);
     assert.equal('cgGroups' in payload, false);
     assert.equal(payload.avatars.length, 1);
     assert.equal(payload.moodAvatars.length, 1);
     const importedJson = await b.db.importFromFile(new Blob([JSON.stringify(payload)]), scope);
     assert.equal(importedJson.imported, 2);
     assert.equal(importedJson.errors.length, 0);
-    assert.equal((await b.db.get(scope, 'Alice')).sourceUrl, 'https://example.invalid/alice.png');
-    assert.equal((await b.db.getMoodAvatar(scope, 'Alice', 'mood-proud')).sourceUrl, 'https://example.invalid/proud.png');
+    assert.equal(await (await b.db.get(scope, 'Alice')).imageBlob.text(), 'base-avatar');
+    assert.equal(await (await b.db.getMoodAvatar(scope, 'Alice', 'mood-proud')).imageBlob.text(), 'proud-avatar');
     assert.equal(await b.db.getConfig(colorKey), '#123456');
 
     let archive;
@@ -409,7 +409,7 @@ test('avatar and mood JSON/ZIP round trips work without CG stores', async () => 
   } finally { a.stop(); b.stop(); c.stop(); }
 });
 
-test('synced URL-only records export real ZIP bytes and restore on an offline device without mutating the source', async () => {
+test('synced records export real ZIP bytes and restore on an offline device without mutating the source', async () => {
   const a = await device('source');
   const b = await device('synced', a.files);
   const c = await device('offline');
@@ -437,6 +437,7 @@ test('synced URL-only records export real ZIP bytes and restore on an offline de
     const manifest = JSON.parse(new TextDecoder().decode(entries.get('manifest.json')));
     assert.equal(entries.size, 3);
     for (const item of [...manifest.avatars, ...manifest.moodAvatars]) {
+      assert.equal('imageUrl' in item, false);
       assert.ok(item.zipPath.endsWith('.png'));
       assert.equal(item.mimeType, 'image/png'); assert.equal(item.fileSize, png.size);
       assert.equal(new TextDecoder().decode(entries.get(item.zipPath)), 'shared-png-bytes');
@@ -445,45 +446,47 @@ test('synced URL-only records export real ZIP bytes and restore on an offline de
     assert.equal(b.transport.pendingByScope.size, 0);
     assert.equal([...b.timers.values()].some(timer => timer.ms === 30000), false);
     const imported = await c.db.importFromFile(archive, '_global_');
-    assert.equal(imported.imported, 2); assert.equal(imported.linked, 0); assert.equal(imported.errors.length, 0);
+    assert.equal(imported.imported, 2); assert.equal(imported.errors.length, 0);
     assert.equal(await (await c.db.get('_global_', 'Alice')).imageBlob.text(), 'shared-png-bytes');
     assert.equal(await (await c.db.getMoodAvatar('_global_', 'Alice', 'mood-proud')).imageBlob.text(), 'shared-png-bytes');
   } finally { a.stop(); b.stop(); c.stop(); }
 });
 
-test('complete JSON resolves remote bytes; explicit URL-only export remains offline and local-only images stay embedded', async () => {
+test('JSON embeds local and synced images for offline restoration without URL fields', async () => {
   const a = await device('json'); const b = await device('json-offline');
   try {
-    await a.db.add('_global_', 'Remote', null, { sourceUrl: 'https://images.invalid/shared.png', mimeType: 'image/webp' });
-    await a.db.addMoodAvatar('_global_', 'Remote', 'mood-tired', null, { syncedUrl: '/user/files/bdv8_12345678.png', mimeType: 'image/png' });
+    await a.db.add('_global_', 'Synced', null, { syncedUrl: '/user/files/bdv8_12345678.png', mimeType: 'image/webp' });
+    await a.db.addMoodAvatar('_global_', 'Synced', 'mood-tired', null, { syncedUrl: '/user/files/bdv8_12345678.png', mimeType: 'image/png' });
     await a.db.add('_global_', 'Local', new Blob(['cached'], { type: 'image/png' }));
-    a.context.fetch = () => { throw new Error('URL-only export must not fetch'); };
-    const links = await a.db.exportCharacterData('_global_', { urlOnly: true });
-    assert.equal(links.avatars.find(item => item.name === 'remote').imageBase64, null);
-    assert.equal(links.moodAvatars[0].imageBase64, null);
-    assert.equal(Buffer.from(links.avatars.find(item => item.name === 'local').imageBase64, 'base64').toString(), 'cached');
-    a.context.fetch = async url => new Response(new Blob([url.startsWith('https:') ? 'remote' : 'synced'], { type: 'image/png' }));
+    const requests = [];
+    a.context.fetch = async url => { requests.push(url); return new Response(new Blob(['synced'], { type: 'image/png' })); };
     const complete = await a.db.exportCharacterData('_global_');
-    assert.equal(complete.avatars.find(item => item.name === 'remote').mimeType, 'image/png');
+    assert.deepEqual(requests, ['/user/files/bdv8_12345678.png']);
+    for (const item of [...complete.avatars, ...complete.moodAvatars]) {
+      assert.ok(item.imageBase64);
+      assert.equal('imageUrl' in item, false);
+    }
+    assert.equal(complete.avatars.find(item => item.name === 'synced').mimeType, 'image/png');
     b.context.fetch = () => { throw new Error('Offline import must not fetch'); };
     const result = await b.db.importFromFile(new Blob([JSON.stringify(complete)]), '_global_');
-    assert.equal(result.imported, 3); assert.equal(result.errors.length, 0); assert.equal(result.linked, 0);
-    assert.equal(await (await b.db.get('_global_', 'Remote')).imageBlob.text(), 'remote');
-    assert.equal(await (await b.db.getMoodAvatar('_global_', 'Remote', 'mood-tired')).imageBlob.text(), 'synced');
+    assert.equal(result.imported, 3); assert.equal(result.errors.length, 0);
+    assert.equal(await (await b.db.get('_global_', 'Synced')).imageBlob.text(), 'synced');
+    assert.equal(await (await b.db.getMoodAvatar('_global_', 'Synced', 'mood-tired')).imageBlob.text(), 'synced');
+    assert.equal(await (await b.db.get('_global_', 'Local')).imageBlob.text(), 'cached');
   } finally { a.stop(); b.stop(); }
 });
 
 test('cached images take priority; generic binary responses use saved MIME and export only the selected scope', async () => {
   const d = await device('precedence');
   try {
-    await d.db.add('_global_', 'Cached', new Blob(['cached'], { type: 'image/png' }), { syncedUrl: '/user/files/not-requested.png', sourceUrl: 'https://invalid.test/not-requested.png' });
-    await d.db.add('_global_', 'Binary', null, { sourceUrl: 'https://images.invalid/binary', mimeType: 'image/png' });
+    await d.db.add('_global_', 'Cached', new Blob(['cached'], { type: 'image/png' }), { syncedUrl: '/user/files/bdv8_00000000.png' });
+    await d.db.add('_global_', 'Binary', null, { syncedUrl: '/user/files/bdv8_12345678.png', mimeType: 'image/png' });
     await d.db.add('another-scope', 'Other', new Blob(['other'], { type: 'image/png' }));
     const requests = [];
     d.context.fetch = async url => { requests.push(url); return new Response(new Blob(['binary'], { type: 'application/octet-stream' })); };
     let archive; d.db._downloadZipFile = blob => { archive = blob; };
     await d.db.exportCharacterDataToFile('_global_');
-    assert.deepEqual(requests, ['https://images.invalid/binary']);
+    assert.deepEqual(requests, ['/user/files/bdv8_12345678.png']);
     const entries = d.api.zipExtract(await archive.arrayBuffer());
     const manifest = JSON.parse(new TextDecoder().decode(entries.get('manifest.json')));
     assert.deepEqual(manifest.avatars.map(item => item.name), ['binary', 'cached']);
@@ -500,7 +503,7 @@ test('unavailable, empty and non-image export assets abort instead of downloadin
   ]) {
     const d = await device('failure');
     try {
-      await d.db.add('_global_', 'Alice', null, { sourceUrl: 'https://images.invalid/a.png' });
+      await d.db.add('_global_', 'Alice', null, { syncedUrl: '/user/files/bdv8_12345678.png' });
       d.context.fetch = async () => response();
       let downloads = 0; d.db._downloadZipFile = () => { downloads++; };
       for (const exporter of [() => d.db.exportCharacterDataToFile('_global_'), () => d.db.exportCharacterData('_global_')]) {
@@ -516,7 +519,7 @@ test('unavailable, empty and non-image export assets abort instead of downloadin
 test('export timeout includes reading the response body and releases its timer', async () => {
   const d = await device('timeout');
   try {
-    await d.db.addMoodAvatar('_global_', 'Alice', 'mood-tired', null, { sourceUrl: 'https://images.invalid/hang.png' });
+    await d.db.addMoodAvatar('_global_', 'Alice', 'mood-tired', null, { syncedUrl: '/user/files/bdv8_12345678.png' });
     let bodyStarted;
     const ready = new Promise(resolve => { bodyStarted = resolve; });
     d.context.fetch = async (_url, { signal }) => ({ ok: true, blob: () => new Promise((_, reject) => {
@@ -561,7 +564,7 @@ test('ZIP shared image references import both records; CRC corruption is rejecte
       moodAvatars: [{ name: 'Alice', moodId: 'mood-proud', zipPath: 'shared.png', mimeType: 'image/png' }] };
     const archive = characterArchive(d, manifest, [{ name: 'shared.png', data: new TextEncoder().encode('UNIQUE_PNG_TEST_BYTES') }]);
     const result = await d.db.importFromFile(archive, '_global_');
-    assert.equal(result.imported, 2); assert.equal(result.errors.length, 0); assert.equal(result.linked, 0);
+    assert.equal(result.imported, 2); assert.equal(result.errors.length, 0);
     assert.equal(await (await d.db.getMoodAvatar('_global_', 'Alice', 'mood-proud')).imageBlob.text(), 'UNIQUE_PNG_TEST_BYTES');
     const bytes = Buffer.from(await archive.arrayBuffer());
     bytes[bytes.indexOf('UNIQUE_PNG_TEST_BYTES')] ^= 1;
@@ -569,24 +572,25 @@ test('ZIP shared image references import both records; CRC corruption is rejecte
   } finally { d.stop(); }
 });
 
-test('JSON and ZIP imports replace stale avatar/mood caches, warn on links, and detach old URLs for embedded images', async () => {
+test('JSON and ZIP imports reject URL-only records before writes and refresh caches for embedded images', async () => {
   for (const format of ['json', 'zip']) {
     const d = await device('replace-' + format);
     try {
       const old = new Blob(['old'], { type: 'image/png' });
-      await d.db.add('_global_', 'Alice', old, { sourceUrl: 'https://images.invalid/old.png' });
+      await d.db.add('_global_', 'Alice', old, { syncedUrl: '/user/files/bdv8_00000000.png' });
       await d.db.addMoodAvatar('_global_', 'Alice', 'mood-tired', old);
-      await d.db.getBlobUrl('_global_', 'Alice'); await d.db.getMoodAvatarBlobUrl('_global_', 'Alice', 'mood-tired');
+      const oldUrl = await d.db.getBlobUrl('_global_', 'Alice');
+      const oldMoodUrl = await d.db.getMoodAvatarBlobUrl('_global_', 'Alice', 'mood-tired');
       const url = 'https://images.invalid/new.png';
       const links = { avatars: [{ name: 'Alice', imageUrl: url, mimeType: 'image/png' }],
         moodAvatars: [{ name: 'Alice', moodId: 'mood-tired', imageUrl: url, mimeType: 'image/png' }] };
       const file = format === 'zip' ? characterArchive(d, links)
         : new Blob([JSON.stringify({ type: 'bubble-character', version: '8.0', ...links })]);
-      const linked = await d.db.importFromFile(file, '_global_');
-      assert.equal(linked.linked, 2); assert.equal(linked.errors.length, 0);
-      assert.equal((await d.db.get('_global_', 'Alice')).imageBlob, null);
-      assert.equal(await d.db.getBlobUrl('_global_', 'Alice'), url);
-      assert.equal(await d.db.getMoodAvatarBlobUrl('_global_', 'Alice', 'mood-tired'), url);
+      d.context.fetch = () => { throw new Error('Imports must not fetch external images'); };
+      await assert.rejects(d.db.importFromFile(file, '_global_'), /备份图片缺失或为空/);
+      assert.equal(await (await d.db.get('_global_', 'Alice')).imageBlob.text(), 'old');
+      assert.equal(await d.db.getBlobUrl('_global_', 'Alice'), oldUrl);
+      assert.equal(await d.db.getMoodAvatarBlobUrl('_global_', 'Alice', 'mood-tired'), oldMoodUrl);
       const embedded = format === 'zip' ? characterArchive(d, {
         avatars: [{ name: 'Alice', zipPath: 'new.png', mimeType: 'image/png' }],
         moodAvatars: [{ name: 'Alice', moodId: 'mood-tired', zipPath: 'new.png', mimeType: 'image/png' }],
@@ -595,12 +599,54 @@ test('JSON and ZIP imports replace stale avatar/mood caches, warn on links, and 
         moodAvatars: [{ name: 'Alice', moodId: 'mood-tired', imageBase64: Buffer.from('restored').toString('base64'), mimeType: 'image/png' }],
       })]);
       const result = await d.db.importFromFile(embedded, '_global_');
-      assert.equal(result.errors.length, 0); assert.equal(result.linked, 0);
-      assert.equal((await d.db.get('_global_', 'Alice')).sourceUrl, null);
+      assert.equal(result.errors.length, 0);
+      assert.equal((await d.db.get('_global_', 'Alice')).syncedUrl, null);
+      assert.notEqual(await d.db.getBlobUrl('_global_', 'Alice'), oldUrl);
+      assert.notEqual(await d.db.getMoodAvatarBlobUrl('_global_', 'Alice', 'mood-tired'), oldMoodUrl);
       assert.equal(await (await d.db.get('_global_', 'Alice')).imageBlob.text(), 'restored');
       assert.equal(await (await d.db.getMoodAvatar('_global_', 'Alice', 'mood-tired')).imageBlob.text(), 'restored');
     } finally { d.stop(); }
   }
+});
+
+test('incomplete JSON image payloads fail before replacing any existing avatar or color', async () => {
+  const d = await device('invalid-json');
+  try {
+    await d.db.add('_global_', 'Alice', new Blob(['original'], { type: 'image/png' }));
+    for (const imageBase64 of [undefined, '', '***']) {
+      const data = { type: 'bubble-character', version: '8.0',
+        avatars: [{ name: 'Alice', imageBase64: Buffer.from('replacement').toString('base64'), mimeType: 'image/png' }],
+        moodAvatars: [{ name: 'Alice', moodId: 'mood-tired', imageBase64, imageUrl: 'https://images.invalid/mood.png' }],
+        colors: { alice: '#123456' },
+      };
+      await assert.rejects(d.db.importFromFile(new Blob([JSON.stringify(data)]), '_global_'), /备份图片(缺失或为空|无效)/);
+      assert.equal(await (await d.db.get('_global_', 'Alice')).imageBlob.text(), 'original');
+      assert.equal(await d.db.getMoodAvatar('_global_', 'Alice', 'mood-tired'), null);
+      assert.equal(await d.db.getConfig(d.api.buildColorConfigKey('_global_', 'Alice')), null);
+    }
+  } finally { d.stop(); }
+});
+
+test('external avatar sources are never displayed, exported or synchronized', async () => {
+  const d = await device('removed-sources');
+  try {
+    const entry = { id: 'avatar:alice', kind: 'avatar', name: 'alice', scope: 'global',
+      updatedAt: 1, sourceUrl: 'https://images.invalid/alice.png' };
+    const record = { alias: d.api.buildAvatarKey('_global_', 'Alice'), ...entry };
+    assert.equal(d.db._recordUrl(record.alias, record), null);
+    d.context.fetch = () => { throw new Error('Must not fetch external sources'); };
+    await assert.rejects(d.db._resolveExportImage(record, 'Alice', new Map()), /没有图片数据或同步图片/);
+    await assert.rejects(d.transport._prepareEntry('global', { ...entry, record }), /没有可同步的图片数据/);
+    assert.throws(() => d.transport._entryToRecord(entry, '_global_'), /缺少有效的同步图片/);
+    const blob = new Blob(['local'], { type: 'image/png' });
+    await d.db.add('_global_', 'Alice', blob);
+    await d.transport.flushNow();
+    const location = await d.transport._manifestLocation('global');
+    const manifest = JSON.parse(await d.files.get('/user/files/' + location.name).text());
+    const synced = Object.values(manifest.entries)[0];
+    assert.match(synced.assetUrl, /^\/user\/files\/bdv8_/);
+    assert.equal('sourceUrl' in synced, false);
+  } finally { d.stop(); }
 });
 
 test('standalone CG imports fail before writing data', async () => {

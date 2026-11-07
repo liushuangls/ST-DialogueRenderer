@@ -1,4 +1,4 @@
-import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "./config.js?v=2.0.2";
+import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "./config.js?v=2.0.3";
 
 export const PROTOCOL_VERSION = 2;
 export const DIALOGUE_TYPES = Object.freeze({ say: '角色直接说出口的话', think: '角色未说出口的想法' });

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { FontCatalog } from "../src/fonts.js?v=2.0.2";
-import { RenderAssets } from "../src/assets.js?v=2.0.2";
+import { FontCatalog } from "../src/fonts.js?v=2.0.3";
+import { RenderAssets } from "../src/assets.js?v=2.0.3";
 
 test('remote font catalogue coalesces requests, caches successes and supports explicit refresh', async () => {
   const original = globalThis.fetch;

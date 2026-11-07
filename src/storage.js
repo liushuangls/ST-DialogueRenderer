@@ -1,9 +1,9 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.0.2";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.0.2";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.2";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.0.2";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.2";
-import { PROTOCOL_VERSION, PROMPT_SUPPLEMENT_KEY, loadPromptSettings, validateSupplement } from "./protocol.js?v=2.0.2";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.0.3";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.0.3";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.3";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.0.3";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.3";
+import { PROTOCOL_VERSION, PROMPT_SUPPLEMENT_KEY, loadPromptSettings, validateSupplement } from "./protocol.js?v=2.0.3";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 1;
@@ -70,7 +70,6 @@ class AvatarDB {
     if (existing) throw new Error(`角色名 "${name}" 已存在，请使用 update() 或换一个角色名`);
     const record = {
       alias: key, imageBlob,
-      sourceUrl: metadata.sourceUrl || null,
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${name.trim().toLowerCase()}.jpg`,
@@ -98,7 +97,7 @@ class AvatarDB {
       this._blobUrlCache.set(cacheKey, url);
       return url;
     }
-    return record.syncedUrl || record.sourceUrl || null;
+    return record.syncedUrl || null;
   }
 
   async getBlobUrl(charId, name) {
@@ -114,7 +113,6 @@ class AvatarDB {
     this._revokeCachedUrl(key);
     const record = {
       ...existing, imageBlob,
-      sourceUrl: metadata.sourceUrl !== undefined ? metadata.sourceUrl : (existing.sourceUrl || null),
       syncedUrl: metadata.syncedUrl !== undefined ? metadata.syncedUrl : null,
       mimeType: imageBlob ? (imageBlob.type || metadata.mimeType || existing.mimeType) : (metadata.mimeType || existing.mimeType),
       fileName: metadata.fileName || existing.fileName,
@@ -231,7 +229,6 @@ class AvatarDB {
     const record = {
       id, charId: safeCharId, alias: safeName, moodId,
       imageBlob,
-      sourceUrl: metadata.sourceUrl || null,
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${safeName}-${moodId}.jpg`,
@@ -440,8 +437,8 @@ class AvatarDB {
     try {
       let blob = record.imageBlob;
       if (!blob) {
-        const url = record.syncedUrl || record.sourceUrl;
-        if (!url || url === 'null') throw new Error('没有图片数据或可读取的图片链接');
+        const url = record.syncedUrl;
+        if (!url || url === 'null') throw new Error('没有图片数据或同步图片，请重新上传');
         if (!downloads.has(url)) {
           downloads.set(url, (async () => {
             const controller = new AbortController();
@@ -469,7 +466,7 @@ class AvatarDB {
   }
 
   //  角色卡配置
-  async exportCharacterData(charId, { urlOnly = false } = {}) {
+  async exportCharacterData(charId) {
     await this._ensureDB();
     const safeCharId = String(charId || GLOBAL_CHAR_ID);
     const prefix = safeCharId + CHAR_ID_SEPARATOR;
@@ -483,14 +480,11 @@ class AvatarDB {
     const avatars = [];
     for (const r of allAvatars.filter(r => r.alias.startsWith(prefix))) {
       const name = extractDisplayName(r.alias, safeCharId);
-      const imageUrl = r.syncedUrl || r.sourceUrl || null;
-      const imageBlob = urlOnly && imageUrl && imageUrl !== 'null'
-        ? null : await this._resolveExportImage(r, '头像“' + name + '”', downloads);
+      const imageBlob = await this._resolveExportImage(r, '头像“' + name + '”', downloads);
       const entry = {
-        name, mimeType: imageBlob?.type || r.mimeType, fileName: r.fileName,
-        fileSize: imageBlob?.size ?? r.fileSize, width: r.width, height: r.height,
+        name, mimeType: imageBlob.type, fileName: r.fileName,
+        fileSize: imageBlob.size, width: r.width, height: r.height,
         createdAt: r.createdAt, updatedAt: r.updatedAt,
-        imageUrl,
         imageBase64: await this._blobToBase64(imageBlob)
       };
       avatars.push(entry);
@@ -503,14 +497,11 @@ class AvatarDB {
     });
     const moodAvatars = [];
     for (const r of allMoodAvatars.filter(r => r.charId === safeCharId)) {
-      const imageUrl = r.syncedUrl || r.sourceUrl || null;
-      const imageBlob = urlOnly && imageUrl && imageUrl !== 'null'
-        ? null : await this._resolveExportImage(r, '表情头像“' + r.alias + ' / ' + r.moodId + '”', downloads);
+      const imageBlob = await this._resolveExportImage(r, '表情头像“' + r.alias + ' / ' + r.moodId + '”', downloads);
       moodAvatars.push({
-        name: r.alias, moodId: r.moodId, mimeType: imageBlob?.type || r.mimeType, fileName: r.fileName,
-        fileSize: imageBlob?.size ?? r.fileSize, width: r.width, height: r.height,
+        name: r.alias, moodId: r.moodId, mimeType: imageBlob.type, fileName: r.fileName,
+        fileSize: imageBlob.size, width: r.width, height: r.height,
         createdAt: r.createdAt, updatedAt: r.updatedAt,
-        imageUrl,
         imageBase64: await this._blobToBase64(imageBlob)
       });
     }
@@ -569,7 +560,7 @@ class AvatarDB {
         name: displayName, mimeType: imageBlob.type, fileName: r.fileName,
         fileSize: imageBlob.size, width: r.width, height: r.height,
         createdAt: r.createdAt, updatedAt: r.updatedAt,
-        imageUrl: r.syncedUrl || r.sourceUrl || null, zipPath: null
+        zipPath: null
       };
       const ext = mimeToExt(imageBlob.type);
       const zipPath = `avatars/${avatarIdx}_${safeFileName(displayName)}${ext}`;
@@ -594,7 +585,7 @@ class AvatarDB {
         name: r.alias, moodId: r.moodId, mimeType: imageBlob.type, fileName: r.fileName,
         fileSize: imageBlob.size, width: r.width, height: r.height,
         createdAt: r.createdAt, updatedAt: r.updatedAt,
-        imageUrl: r.syncedUrl || r.sourceUrl || null, zipPath: null
+        zipPath: null
       };
       const ext = mimeToExt(imageBlob.type);
       const zipPath = `mood/${moodIdx}_${safeFileName(r.alias)}_${r.moodId}${ext}`;
@@ -638,35 +629,36 @@ class AvatarDB {
   async _importCharacterData(data, charId) {
     await this._ensureDB();
     const safeCharId = String(charId || GLOBAL_CHAR_ID);
-    const result = { imported: 0, linked: 0, skipped: 0, errors: [] };
+    const result = { imported: 0, errors: [] };
     const compOpts = await getCompressOptions(this);
+    // 所有条目必须自带图片；先完整解码，避免缺图时覆盖部分已有头像。
+    const images = new Map();
+    for (const list of [data.avatars, data.moodAvatars]) {
+      if (!Array.isArray(list)) continue;
+      for (const item of list) {
+        const name = item?.name || item?.alias || '未知角色';
+        if (typeof item?.imageBase64 !== 'string' || !item.imageBase64) {
+          throw new Error('备份图片缺失或为空：' + name);
+        }
+        let blob;
+        try { blob = this._base64ToBlob(item.imageBase64, item.mimeType); }
+        catch (error) { throw new Error('备份图片无效：' + name + '：' + error.message); }
+        if (!blob.size) throw new Error('备份图片缺失或为空：' + name);
+        images.set(item, blob);
+      }
+    }
 
     if (Array.isArray(data.avatars)) {
       for (const item of data.avatars) {
         try {
           const itemName = item.name || item.alias;
-          if (item.imageBase64) {
-            let blob = this._base64ToBlob(item.imageBase64, item.mimeType);
-            blob = await compressImage(blob, compOpts);
-            const existing = await this.get(safeCharId, itemName);
-            if (existing) {
-              await this.update(safeCharId, itemName, blob, { sourceUrl: null, fileName: item.fileName, width: item.width, height: item.height });
-            } else {
-              await this.add(safeCharId, itemName, blob, { fileName: item.fileName, width: item.width, height: item.height });
-            }
-          } else if (item.imageUrl) {
-            const existing = await this.get(safeCharId, itemName);
-            if (existing) {
-              await this.update(safeCharId, itemName, null, {
-                sourceUrl: item.imageUrl, fileName: item.fileName, width: item.width, height: item.height, mimeType: item.mimeType
-              });
-            } else {
-              await this.add(safeCharId, itemName, null, {
-                sourceUrl: item.imageUrl, fileName: item.fileName, width: item.width, height: item.height, mimeType: item.mimeType
-              });
-            }
-            result.linked++;
-          } else { result.skipped++; continue; }
+          const blob = await compressImage(images.get(item), compOpts);
+          const metadata = { fileName: item.fileName, width: item.width, height: item.height };
+          if (await this.get(safeCharId, itemName)) {
+            await this.update(safeCharId, itemName, blob, metadata);
+          } else {
+            await this.add(safeCharId, itemName, blob, metadata);
+          }
           result.imported++;
         } catch (err) { result.errors.push(`${item.name || item.alias}: ${err.message}`); }
       }
@@ -675,20 +667,10 @@ class AvatarDB {
     if (Array.isArray(data.moodAvatars)) {
       for (const item of data.moodAvatars) {
         try {
-          const itemName = item.name || item.alias;
-          if (item.imageBase64) {
-            let blob = this._base64ToBlob(item.imageBase64, item.mimeType);
-            blob = await compressImage(blob, compOpts);
-            await this.addMoodAvatar(safeCharId, itemName, item.moodId, blob, {
-              fileName: item.fileName, width: item.width, height: item.height
-            });
-          } else if (item.imageUrl) {
-            await this.addMoodAvatar(safeCharId, itemName, item.moodId, null, {
-              sourceUrl: item.imageUrl, mimeType: item.mimeType, fileName: item.fileName,
-              width: item.width, height: item.height
-            });
-            result.linked++;
-          } else { result.skipped++; continue; }
+          const blob = await compressImage(images.get(item), compOpts);
+          await this.addMoodAvatar(safeCharId, item.name || item.alias, item.moodId, blob, {
+            fileName: item.fileName, width: item.width, height: item.height
+          });
           result.imported++;
         } catch (err) { result.errors.push(`${item.name || item.alias}/${item.moodId}: ${err.message}`); }
       }
@@ -809,7 +791,7 @@ class AvatarDB {
   async _importCharacterDataFromZip(file, charId) {
     await this._ensureDB();
     const safeCharId = String(charId || GLOBAL_CHAR_ID);
-    const result = { imported: 0, linked: 0, skipped: 0, errors: [] };
+    const result = { imported: 0, errors: [] };
     const compOpts = await getCompressOptions(this);
 
     // 解包 ZIP
@@ -829,12 +811,12 @@ class AvatarDB {
       throw new Error('仅支持 v8 ZIP 导出文件；v7 及更早版本不会自动迁移');
     }
 
-    // 声明带图片的条目必须完整：缺图时在写库前拒绝，不能悄悄降级成 URL 导入。
+    // 所有条目必须包含图片文件；缺图时在写库前拒绝。
     const imageReferences = new Map();
     for (const list of [manifest.avatars, manifest.moodAvatars]) {
       if (!Array.isArray(list)) continue;
       for (const item of list) {
-        if (!item?.zipPath) continue;
+        if (!item?.zipPath) throw new Error('备份图片缺失或为空：' + (item?.name || item?.alias || '未知角色'));
         const bytes = zipEntries.get(item.zipPath);
         if (!bytes?.length) throw new Error('备份图片缺失或为空：' + (item.name || item.alias || '未知角色') + ' / ' + item.zipPath);
         imageReferences.set(item.zipPath, (imageReferences.get(item.zipPath) || 0) + 1);
@@ -853,35 +835,17 @@ class AvatarDB {
       for (const item of manifest.avatars) {
         try {
           const itemName = item.name || item.alias;
-          if (item.zipPath) {
-            // 从 ZIP 条目中取出二进制数据，转为 Blob
-            const imgData = takeImage(item.zipPath);
-            const ext = item.zipPath.substring(item.zipPath.lastIndexOf('.'));
-            const mime = item.mimeType || extToMime(ext);
-            let blob = new Blob([imgData], { type: mime });
-            blob = await compressImage(blob, compOpts);
-            const existing = await this.get(safeCharId, itemName);
-            if (existing) {
-              await this.update(safeCharId, itemName, blob, { sourceUrl: null, fileName: item.fileName, width: item.width, height: item.height });
-            } else {
-              await this.add(safeCharId, itemName, blob, { fileName: item.fileName, width: item.width, height: item.height });
-            }
-            result.imported++;
-          } else if (item.imageUrl) {
-            // 仅有 URL 的头像（无本地图片）
-            const existing = await this.get(safeCharId, itemName);
-            if (existing) {
-              await this.update(safeCharId, itemName, null, {
-                sourceUrl: item.imageUrl, fileName: item.fileName, width: item.width, height: item.height, mimeType: item.mimeType
-              });
-            } else {
-              await this.add(safeCharId, itemName, null, {
-                sourceUrl: item.imageUrl, fileName: item.fileName, width: item.width, height: item.height, mimeType: item.mimeType
-              });
-            }
-            result.linked++;
-            result.imported++;
-          } else { result.skipped++; }
+          const imgData = takeImage(item.zipPath);
+          const ext = item.zipPath.substring(item.zipPath.lastIndexOf('.'));
+          const mime = item.mimeType || extToMime(ext);
+          const blob = await compressImage(new Blob([imgData], { type: mime }), compOpts);
+          const metadata = { fileName: item.fileName, width: item.width, height: item.height };
+          if (await this.get(safeCharId, itemName)) {
+            await this.update(safeCharId, itemName, blob, metadata);
+          } else {
+            await this.add(safeCharId, itemName, blob, metadata);
+          }
+          result.imported++;
         } catch (err) { result.errors.push(`${item.name || item.alias}: ${err.message}`); }
       }
     }
@@ -890,25 +854,14 @@ class AvatarDB {
     if (Array.isArray(manifest.moodAvatars)) {
       for (const item of manifest.moodAvatars) {
         try {
-          const itemName = item.name || item.alias;
-          if (item.zipPath) {
-            const imgData = takeImage(item.zipPath);
-            const ext = item.zipPath.substring(item.zipPath.lastIndexOf('.'));
-            const mime = item.mimeType || extToMime(ext);
-            let blob = new Blob([imgData], { type: mime });
-            blob = await compressImage(blob, compOpts);
-            await this.addMoodAvatar(safeCharId, itemName, item.moodId, blob, {
-              fileName: item.fileName, width: item.width, height: item.height
-            });
-            result.imported++;
-          } else if (item.imageUrl) {
-            await this.addMoodAvatar(safeCharId, itemName, item.moodId, null, {
-              sourceUrl: item.imageUrl, mimeType: item.mimeType, fileName: item.fileName,
-              width: item.width, height: item.height
-            });
-            result.linked++;
-            result.imported++;
-          } else { result.skipped++; }
+          const imgData = takeImage(item.zipPath);
+          const ext = item.zipPath.substring(item.zipPath.lastIndexOf('.'));
+          const mime = item.mimeType || extToMime(ext);
+          const blob = await compressImage(new Blob([imgData], { type: mime }), compOpts);
+          await this.addMoodAvatar(safeCharId, item.name || item.alias, item.moodId, blob, {
+            fileName: item.fileName, width: item.width, height: item.height
+          });
+          result.imported++;
         } catch (err) { result.errors.push(`${item.name || item.alias}/${item.moodId}: ${err.message}`); }
       }
     }

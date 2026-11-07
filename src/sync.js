@@ -1,7 +1,7 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.0.2";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.0.2";
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.0.2";
-import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.0.2";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.0.3";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.0.3";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.0.3";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.0.3";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';
@@ -343,13 +343,6 @@ class AvatarSync {
     return /^\/user\/files\/bdv8_[a-f0-9]{8,64}\.(?:jpg|png|gif|webp|avif|bmp)$/i.test(url) ? url : null;
   }
 
-  _safeSourceUrl(value) {
-    const url = String(value || '').trim();
-    if (/^https?:\/\/[^\s"'<>]+$/i.test(url)) return url;
-    if (/^\/user\/files\/[A-Za-z0-9._~%+-]+$/i.test(url)) return url;
-    return null;
-  }
-
   async _prepareEntry(scope, change) {
     const base = {
       id: change.id,
@@ -364,14 +357,6 @@ class AvatarSync {
 
     const record = change.record || {};
     let assetUrl = this._safeAssetUrl(record.syncedUrl);
-    let sourceUrl = this._safeSourceUrl(record.sourceUrl);
-    if (!assetUrl && sourceUrl?.startsWith('/user/files/')) {
-      const ownedAssetUrl = this._safeAssetUrl(sourceUrl);
-      if (ownedAssetUrl) {
-        assetUrl = ownedAssetUrl;
-        sourceUrl = null;
-      }
-    }
     if (record.imageBlob instanceof Blob) {
       const hash = await this._digest(record.imageBlob);
       const assetName = AVATAR_SYNC_PREFIX + '_' + hash + '.' + this._extensionForMime(record.imageBlob.type || record.mimeType);
@@ -381,12 +366,11 @@ class AvatarSync {
         this.uploadedAssets.add(assetName);
       }
     }
-    if (!assetUrl && !sourceUrl) throw new Error('头像“' + base.name + '”没有可同步的图片数据');
+    if (!assetUrl) throw new Error('头像“' + base.name + '”没有可同步的图片数据');
     return {
       ...base,
       deleted: false,
       assetUrl,
-      sourceUrl,
       mimeType: /^image\//i.test(String(record.mimeType || '')) ? record.mimeType : 'image/webp',
       fileName: String(record.fileName || ''),
       fileSize: Number(record.fileSize) || (record.imageBlob?.size || 0),
@@ -486,12 +470,10 @@ class AvatarSync {
 
   _entryToRecord(entry, localCharId) {
     const syncedUrl = this._safeAssetUrl(entry.assetUrl);
-    const sourceUrl = this._safeSourceUrl(entry.sourceUrl);
-    if (!syncedUrl && !sourceUrl) return null;
+    if (!syncedUrl) throw new Error('头像“' + entry.name + '”缺少有效的同步图片，请重新上传');
     const common = {
       imageBlob: null,
       syncedUrl,
-      sourceUrl,
       syncScope: entry.scope,
       mimeType: /^image\//i.test(String(entry.mimeType || '')) ? entry.mimeType : 'image/webp',
       fileName: String(entry.fileName || ''),

@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.0.2";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.0.2";
-import { DialogueController } from "../src/controller.js?v=2.0.2";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.0.2";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.0.3";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.0.3";
+import { DialogueController } from "../src/controller.js?v=2.0.3";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.0.3";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {

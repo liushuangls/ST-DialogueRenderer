@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.0.2";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.0.2";
-import { createExtension } from "../src/extension.js?v=2.0.2";
+import { AvatarDB } from "../src/storage.js?v=2.0.3";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.0.3";
+import { createExtension } from "../src/extension.js?v=2.0.3";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
