@@ -1,0 +1,39 @@
+@import url('./src/bubble-style.css?v=1.0.0');
+
+.bd-settings .bd-count-label { display:flex; align-items:center; gap:10px; margin:10px 0 }
+.bd-settings .bd-count { width:80px }
+.bd-settings .bd-manager { width:100%; margin:12px 0 }
+.bd-settings .bd-status { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere }
+.bd-settings small { display:block; opacity:.8; line-height:1.5 }
+
+.bd-content .bd-segment { margin:0; padding:0 }
+.bd-content .dc-msg {
+  padding-left:var(--bd-message-left); min-height:var(--bd-message-min-height);
+  color:var(--bd-color); text-shadow:none;
+}
+.bd-content .dc-msg-text {
+  color:var(--bd-color); font-size:var(--bd-dialogue-size); font-weight:var(--bd-dialogue-weight);
+  line-height:var(--bd-dialogue-line-height); font-family:var(--bd-dialogue-font);
+}
+.bd-content .dc-msg-text :is(em,i,strong,q,code,a,span) { color:inherit }
+.bd-content .dc-msg-text .dc-msg-quote { color:var(--bd-color) }
+.bd-content .dc-msg-name { color:var(--bd-color); font-weight:var(--bd-name-weight); font-family:var(--bd-name-font) }
+.bd-content .dc-msg-avatar { width:var(--bd-avatar-size); height:var(--bd-avatar-size); border-radius:var(--bd-avatar-radius) }
+.bd-content .dc-msg-avatar :is(img,.dc-msg-avatar-ph) { border-radius:var(--bd-avatar-radius) }
+.bd-content .dc-msg-avatar-ph { font-size:var(--bd-placeholder-size) }
+.bd-content :is(.dc-narration-block,.bd-narration) {
+  color:var(--bd-color); font-family:var(--bd-narration-font); font-size:var(--bd-narration-size);
+  font-weight:var(--bd-narration-weight); line-height:var(--bd-narration-line-height);
+  padding-left:var(--bd-narration-left); padding-right:var(--bd-narration-right);
+  background:var(--bd-background); border-radius:var(--bd-narration-radius); text-shadow:none;
+}
+.bd-content :is(.dc-narration-block,.bd-narration) :is(p,h1,h2,h3,h4,h5,h6,em,q,blockquote,a,code,strong,li,th,td) { color:inherit }
+.bd-content .dc-narration-block p,.bd-content p.bd-narration { text-indent:var(--bd-indent) }
+.bd-content :is(h1,h2,h3,h4,h5,h6).bd-narration { font-weight:700 }
+.bd-content h1.bd-narration { font-size:calc(var(--bd-narration-size) * 1.4) }
+.bd-content h2.bd-narration { font-size:calc(var(--bd-narration-size) * 1.25) }
+.bd-content h3.bd-narration { font-size:calc(var(--bd-narration-size) * 1.1) }
+.bd-content .bd-segment > .dc-narration-block + .dc-msg,
+.bd-content .bd-segment > .dc-msg + .dc-narration-block,
+.bd-content > .bd-narration + .bd-segment,
+.bd-content > .bd-segment + .bd-narration { margin-top:28px }

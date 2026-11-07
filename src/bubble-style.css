@@ -1,0 +1,82 @@
+
+/* === 基础重置 === */
+.bd-content .dc-msg q{quotes:none}
+.bd-content .dc-msg q::before,.bd-content .dc-msg q::after{content:''}
+
+/* === 普通正文：无角色名、无头像 === */
+.bd-content .dc-narration-block{position:relative;padding:0 16px;margin:8px 0;font-family:"Noto Sans SC","Source Han Sans SC",sans-serif;background:transparent}
+.bd-content .dc-narration-block p{margin:0.5em 0;text-indent:var(--dc-text-indent,0em)}
+
+/* === 对话消息 === */
+.bd-content .dc-msg{position:relative;padding:10px 16px 10px 76px;margin:10px 0;min-height:56px}
+
+/* 正文与发言（含心理活动）切换时留白；段内及连续对话间距保持原样。 */
+.bd-content>.dc-narration-block+.dc-msg,
+.bd-content>.dc-msg+.dc-narration-block{margin-top:28px}
+
+/* === 头像 === */
+.bd-content .dc-msg-avatar{position:absolute;left:16px;top:10px;width:52px;height:52px;border-radius:8px;overflow:hidden}
+.bd-content .dc-msg-avatar img{width:100%;height:100%;object-fit:cover;border-radius:8px}
+.bd-content .dc-msg-avatar-ph{width:100%;height:100%;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;color:#fff}
+
+/* === 消息头部：名字 + 情绪标签 === */
+.bd-content .dc-msg-header{display:flex;align-items:flex-end;flex-wrap:wrap;column-gap:6px;row-gap:2px;margin:0 0 2px;line-height:1}
+
+/* 名字容器 */
+.bd-content .dc-msg-name{display:inline-flex;align-items:baseline;font-family:"Noto Serif SC","Source Han Serif SC",serif;font-size:16px;font-weight:800;letter-spacing:1.5px;line-height:1;color:inherit}
+/* 第1字：大字染色 */
+.bd-content .dc-msg-name .dc-ch{font-size:22px;line-height:0.95}
+/* 第3字：小字染色 */
+.bd-content .dc-msg-name .dc-cs{font-size:16px;line-height:1}
+/* 其余字：小字默认色 */
+.bd-content .dc-msg-name .dc-cn{font-size:16px;line-height:1;color:inherit}
+
+/* 情绪标签（胶囊样式） */
+.bd-content .dc-msg-mood{display:inline-flex;align-items:center;align-self:flex-end;flex:0 0 auto;font-size:0.60rem;padding:1px 6px;border-radius:999px;font-weight:500;line-height:1.2;font-family:"Noto Sans SC","Source Han Sans SC",sans-serif;margin:0 0 1px}
+
+/* === 台词文本：思源宋体 === */
+.bd-content .dc-msg-text{display:block;margin-top:0;font-size:14.5px;color:rgba(255,255,255,0.85);line-height:1.41;word-wrap:break-word;overflow-wrap:break-word;font-family:"Noto Serif SC","Source Han Serif SC",serif}
+.bd-content .dc-msg-text-content{display:inline}
+.bd-content .dc-msg-text-content-thought{font-style:italic;opacity:.86}
+
+/* === 装饰大引号 / 心里话装饰符 === */
+.bd-content .dc-msg-quote{display:inline-block;position:relative;font-size:2.3rem;font-family:Georgia,"Times New Roman",serif;line-height:0;height:0.5em;margin-left:5px;top:0.45em;transform:scaleY(0.96);transform-origin:center bottom;overflow:visible;vertical-align:baseline;pointer-events:none;font-weight:400}
+.bd-content .dc-msg-quote-thought{font-size:1.35rem;top:.06em;height:auto;line-height:1;margin-left:6px;transform:none;vertical-align:baseline}
+
+/* === HTML 嵌入块兼容 === */
+.bd-content .dc-html-embed{margin:12px 0}
+.bd-content .dc-html-iframe{display:block;width:100%;min-height:120px;border:0;background:transparent;overflow:hidden;border-radius:12px}
+
+/* === 颜色系统（8色） === */
+.bd-content .dc-c1{color:#f47b67}.bd-content .dc-c2{color:#45ddc0}.bd-content .dc-c3{color:#e78bff}.bd-content .dc-c4{color:#f0b232}
+.bd-content .dc-c5{color:#58a6ff}.bd-content .dc-c6{color:#ff9a76}.bd-content .dc-c7{color:#7ee787}.bd-content .dc-c8{color:#d2a8ff}
+.bd-content .dc-bg1{background:#f47b67}.bd-content .dc-bg2{background:#45ddc0}.bd-content .dc-bg3{background:#e78bff}.bd-content .dc-bg4{background:#f0b232}
+.bd-content .dc-bg5{background:#58a6ff}.bd-content .dc-bg6{background:#ff9a76}.bd-content .dc-bg7{background:#7ee787}.bd-content .dc-bg8{background:#d2a8ff}
+/* 情绪标签背景（低透明度） */
+.bd-content .dc-mood1{background:rgba(244,123,103,0.15);color:#f47b67}
+.bd-content .dc-mood2{background:rgba(69,221,192,0.15);color:#45ddc0}
+.bd-content .dc-mood3{background:rgba(231,139,255,0.15);color:#e78bff}
+.bd-content .dc-mood4{background:rgba(240,178,50,0.15);color:#f0b232}
+.bd-content .dc-mood5{background:rgba(88,166,255,0.15);color:#58a6ff}
+.bd-content .dc-mood6{background:rgba(255,154,118,0.15);color:#ff9a76}
+.bd-content .dc-mood7{background:rgba(126,231,135,0.15);color:#7ee787}
+.bd-content .dc-mood8{background:rgba(210,168,255,0.15);color:#d2a8ff}
+
+/* === Markdown 样式（旁白用） === */
+.bd-content .dc-narration-block strong{font-weight:700}
+.bd-content .dc-narration-block em{font-style:italic}
+.bd-content .dc-narration-block del{text-decoration:line-through;opacity:0.7}
+.bd-content .dc-narration-block code{background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-family:"Fira Code","Source Code Pro",monospace;font-size:0.9em}
+.bd-content .dc-narration-block pre{background:rgba(255,255,255,0.06);padding:10px 14px;border-radius:6px;overflow-x:auto;margin:0.5em 0}
+.bd-content .dc-narration-block pre code{background:none;padding:0}
+.bd-content .dc-narration-block blockquote{border-left:3px solid rgba(255,255,255,0.2);padding-left:12px;margin:0.5em 0;color:inherit}
+.bd-content .dc-narration-block ul,.bd-content .dc-narration-block ol{padding-left:24px;margin:0.5em 0}
+.bd-content .dc-narration-block li{margin:2px 0}
+.bd-content .dc-narration-block table{border-collapse:collapse;margin:0.5em 0;width:100%}
+.bd-content .dc-narration-block th,.bd-content .dc-narration-block td{border:1px solid rgba(255,255,255,0.15);padding:4px 8px;text-align:left}
+.bd-content .dc-narration-block th{background:rgba(255,255,255,0.06)}
+.bd-content .dc-narration-block h1,.bd-content .dc-narration-block h2,.bd-content .dc-narration-block h3,.bd-content .dc-narration-block h4,.bd-content .dc-narration-block h5,.bd-content .dc-narration-block h6{margin:0.6em 0 0.3em;font-weight:700;color:inherit}
+.bd-content .dc-narration-block h1{font-size:1.4em}.bd-content .dc-narration-block h2{font-size:1.25em}.bd-content .dc-narration-block h3{font-size:1.1em}
+.bd-content .dc-narration-block hr{border:none;border-top:1px solid rgba(255,255,255,0.15);margin:0.8em 0}
+.bd-content .dc-narration-block a{color:inherit;text-decoration:underline}
+.bd-content .dc-narration-block img{max-width:100%;border-radius:4px}
