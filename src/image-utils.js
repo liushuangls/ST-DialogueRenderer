@@ -1,4 +1,4 @@
-import { STYLE_DEFAULTS } from './config.js?v=2.0.0';
+import { STYLE_DEFAULTS } from "./config.js?v=2.0.1";
 
 async function compressImage(blob, options = {}) {
   const {

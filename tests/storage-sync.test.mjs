@@ -133,6 +133,25 @@ test('renaming a character moves base, mood assets and color together and synchr
   } finally { a.stop(); b.stop(); }
 });
 
+test('v2 style sync seeds current settings without reading obsolete v1 fields or state', async () => {
+  const oldEntry = { kind:'config', key:'style_markdownMode', value:'basic', updatedAt:99, writer:'old' };
+  const oldState = { entries:{ 'config:style_markdownMode':oldEntry } };
+  const oldFile = new Blob([JSON.stringify({ schema:'bubble-dialogue-global-style-v8', version:1, scope:'global', ...oldState })]);
+  const files = new Map([['/user/files/bdv8_global_style_v1.json', oldFile]]);
+  const d = await device('v2-bootstrap', files, { seed:{ style_avatarSize:88, style_markdownMode:'basic', global_style_sync_v1:oldState } });
+  try {
+    await d.sync.refresh();
+    assert.equal(d.sync.getStatus().state, 'synced');
+    assert.equal(await d.db.getConfig('style_avatarSize'), 88);
+    assert.equal(d.downloads.includes('/user/files/bdv8_global_style_v1.json'), false);
+    const current = JSON.parse(await files.get('/user/files/bdv8_global_style_v2.json').text());
+    assert.equal(current.version, 2);
+    assert.equal(current.entries['config:style_avatarSize'].value, 88);
+    assert.equal(current.entries['config:style_markdownMode'], undefined);
+    assert.equal(files.get('/user/files/bdv8_global_style_v1.json'), oldFile);
+  } finally { d.stop(); }
+});
+
 test('new device receives global styles and cache; no-change refresh does not upload', async () => {
   const a=await device('A');
   await a.db.setConfig('style_avatarSize',120);
@@ -244,7 +263,7 @@ test('clear-all creates reset entries and font tombstones', async () => {
 test('malformed remote documents fail visibly and do not overwrite local state', async () => {
   const a=await device('A');
   await a.db.setConfig('style_avatarSize',80);
-  a.files.set('/user/files/bdv8_global_style_v1.json',new Blob(['{"schema":"bad","entries":{}}']));
+  a.files.set('/user/files/bdv8_global_style_v2.json',new Blob(['{"schema":"bad","entries":{}}']));
   await assert.rejects(a.sync.refresh(),/格式不匹配/);
   assert.equal(await a.db.getConfig('style_avatarSize'),80);
   assert.equal(a.uploads.length,0);
@@ -271,7 +290,7 @@ test('late upload completion cannot erase a newer local edit', async () => {
   const entered=new Promise(resolve=>{started=resolve;});
   let once=true;
   const a=await device('A',new Map(),{onUpload:async name=>{
-    if(once&&name==='bdv8_global_style_v1.json'){once=false;started();await blocked;}
+    if(once&&name==='bdv8_global_style_v2.json'){once=false;started();await blocked;}
   }});
   await a.db.setConfig('style_avatarSize',80);
   const running=a.sync.refresh();await entered;

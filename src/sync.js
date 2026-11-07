@@ -1,7 +1,7 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from './config.js?v=2.0.0';
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from './context.js?v=2.0.0';
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from './storage.js?v=2.0.0';
-import { LOCAL_FONT_MAX_SIZE } from './fonts.js?v=2.0.0';
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.0.1";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.0.1";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.0.1";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.0.1";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';
@@ -637,9 +637,9 @@ class AvatarSync {
 
 
 // 全局正文样式：每个设置独立保存修订号，字体按内容寻址；网络传输复用头像同步通道。
-const GLOBAL_STYLE_SYNC_KEY = 'global_style_sync_v1';
-const GLOBAL_STYLE_SYNC_FILE = 'bdv8_global_style_v1.json';
-const GLOBAL_STYLE_SYNC_SCHEMA = 'bubble-dialogue-global-style-v8';
+const GLOBAL_STYLE_SYNC_KEY = 'global_style_sync_v2';
+const GLOBAL_STYLE_SYNC_FILE = 'bdv8_global_style_v2.json';
+const GLOBAL_STYLE_SYNC_SCHEMA = 'bubble-dialogue-global-style-v2';
 const GLOBAL_STYLE_SYNC_KEYS = new Set([...STYLE_CONFIG_KEYS, 'style_cssFontUrls']);
 
 class GlobalStyleSync {
@@ -819,7 +819,7 @@ class GlobalStyleSync {
     const text = await response.text();
     if (text.length > 512 * 1024) throw new Error('美化同步清单过大');
     const manifest = JSON.parse(text);
-    if (manifest.schema !== GLOBAL_STYLE_SYNC_SCHEMA || manifest.version !== 1 || manifest.scope !== 'global' || !manifest.entries || Array.isArray(manifest.entries) || typeof manifest.entries !== 'object') throw new Error('美化同步清单格式不匹配');
+    if (manifest.schema !== GLOBAL_STYLE_SYNC_SCHEMA || manifest.version !== 2 || manifest.scope !== 'global' || !manifest.entries || Array.isArray(manifest.entries) || typeof manifest.entries !== 'object') throw new Error('美化同步清单格式不匹配');
     if (Object.keys(manifest.entries).length > 512) throw new Error('美化同步清单条目过多');
     for (const [id, entry] of Object.entries(manifest.entries)) this._validate(id, entry);
     return manifest;
@@ -884,7 +884,7 @@ class GlobalStyleSync {
       changed = true;
     }
     if (changed) {
-      const manifest = { schema: GLOBAL_STYLE_SYNC_SCHEMA, version: 1, scope: 'global', entries };
+      const manifest = { schema: GLOBAL_STYLE_SYNC_SCHEMA, version: 2, scope: 'global', entries };
       const json = JSON.stringify(manifest);
       if (json.length > 512 * 1024 || Object.keys(entries).length > 512) throw new Error('美化同步清单超过限制');
       await this.transport._uploadBlob(GLOBAL_STYLE_SYNC_FILE, new Blob([json], { type: 'application/json' }));

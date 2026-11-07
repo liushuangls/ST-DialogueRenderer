@@ -1,6 +1,6 @@
-import { decorateMessage } from './dom-renderer.js?v=2.0.0';
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from './settings.js?v=2.0.0';
-import { isDialogueCandidate } from './protocol.js?v=2.0.0';
+import { decorateMessage } from "./dom-renderer.js?v=2.0.1";
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.0.1";
+import { isDialogueCandidate } from "./protocol.js?v=2.0.1";
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, onDiagnostics = () => {}, chatSurface }) {

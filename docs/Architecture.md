@@ -47,6 +47,8 @@ ChatSurface 模式在首次投影前同步注册 participant，使用 `didCommit
 
 提示词模板的补充文本和情绪词表先完整验证，再在同一事务内保存。模板格式使用 `version: 2.0` 和 `protocolVersion: 2`。图片与样式的存储、备份和同步格式保持各自的数据版本；对话协议版本不要求重建资产库。
 
+删除 `style_markdownMode` 后，全局样式同步使用 `global_style_sync_v2` 状态和 `bdv8_global_style_v2.json` 清单。首次从当前本地有效字段与字体记录播种；旧同步清单不参与读取，已删除字段不会混入新的严格校验。
+
 2.0 不解析 `@bubble` 或旧容器别名，不读取旧自由格式提示词配置；已有聊天不会被迁移或改写。
 
 ## 验证

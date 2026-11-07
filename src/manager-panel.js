@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from './config.js?v=2.0.0';
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName } from './context.js?v=2.0.0';
-import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from './fonts.js?v=2.0.0';
-import { STORE_AVATARS, STORE_MOOD_AVATARS } from './storage.js?v=2.0.0';
-import { compressImage, getCompressOptions } from './image-utils.js?v=2.0.0';
-import { buildPrompt, loadPromptSettings } from './protocol.js?v=2.0.0';
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.1";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.1";
+import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.1";
+import { STORE_AVATARS, STORE_MOOD_AVATARS } from "./storage.js?v=2.0.1";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.1";
+import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.1";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_FETCH_TIMEOUT_MS = 8000;
