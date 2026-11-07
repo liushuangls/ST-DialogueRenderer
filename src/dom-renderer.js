@@ -1,10 +1,11 @@
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.0";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.1";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
 const PROTECTED_BLOCKS = PROTECTED.replace('code,', '');
 const STYLE_PROTECTED = PROTECTED_BLOCKS.replace('table,', '');
 const COLORS = ['#f47b67', '#45ddc0', '#e78bff', '#f0b232', '#58a6ff', '#ff9a76', '#7ee787', '#d2a8ff'];
+let nextViewId = 0;
 
 function element(doc, tag, className, text) {
   const node = doc.createElement(tag);
@@ -170,7 +171,7 @@ export function applyStyles(root, settings) {
 /** Decorate host-formatted DOM; no raw-message regex pass and no code-block iframe. */
 export function decorateMessage(root, assets, { signal, streaming = false } = {}) {
   if (signal?.aborted) return { dispose() {}, updateStyles() {}, diagnostics: [], count: 0 };
-  if (root.classList.contains('bd-content')) throw new Error('该消息已经由对话渲染系统接管');
+  if (root.classList.contains('bd-content') || root.hasAttribute('data-bd-view')) throw new Error('该消息已经由对话渲染系统接管');
   const doc = root.ownerDocument;
   const diagnostics = [];
   let markerIndex = 0;
@@ -201,6 +202,7 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
     return { original, lines, parsed };
   });
   if (!count) return { dispose() {}, updateStyles() {}, diagnostics, count };
+  const viewId = 'bd-' + (++nextViewId);
   const patches = [];
   const marked = [];
   let alive = !signal?.aborted;
@@ -211,13 +213,15 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
   let ownedProperties = [];
   try {
     root.classList.add('bd-content');
+    root.dataset.bdView = viewId;
     applyStyles(root, assets.settings);
     ownedProperties = Array.from(root.style).filter(key => key.startsWith('--bd-'));
 
     for (const { original, lines, parsed } of blocks) {
       if (!parsed.some(line => line.kind === 'dialogue')) continue;
       const segment = element(doc, 'div', 'bd-segment');
-      segment.dataset.bdOwned = '';
+      const token = viewId + ':' + patches.length;
+      segment.dataset.bdOwned = token;
       let narration;
       lines.forEach((line, index) => {
         if (parsed[index].kind === 'dialogue') {
@@ -232,14 +236,17 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
         }
       });
       original.replaceWith(segment);
-      patches.push({ original, segment });
+      patches.push({ original, segment, token });
     }
     // Decorate only plain narrative blocks. Dedicated HTML/code runtimes keep ownership.
     for (const node of root.children) {
       if (!node.matches('p,h1,h2,h3,h4,h5,h6,blockquote,ul,ol,hr,table') || node.matches(STYLE_PROTECTED) || node.querySelector(STYLE_PROTECTED)) continue;
       if (!node.classList.contains('bd-narration')) {
         const hadClass = node.hasAttribute('class');
-        node.classList.add('bd-narration'); marked.push({ node, hadClass });
+        const token = viewId + ':' + marked.length;
+        node.classList.add('bd-narration');
+        node.dataset.bdNarration = token;
+        marked.push({ node, hadClass, token });
       }
     }
   } catch (error) {
@@ -247,22 +254,38 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
     dispose();
     throw error;
   }
-  function dispose() {
+  function dispose({ replacementRoot } = {}) {
     if (!alive) return;
     alive = false;
-    for (const { original, segment } of patches) if (segment.parentNode) segment.replaceWith(original);
-    for (const { node, hadClass } of marked) {
-      node.classList.remove('bd-narration');
-      if (!hadClass && !node.className) node.removeAttribute('class');
+    const roots = [root];
+    // Other renderers may rewrite innerHTML or copy the message root. Tokens survive
+    // those copies, so restore our projections while preserving their HTML/iframes.
+    if (replacementRoot && replacementRoot !== root && (replacementRoot.dataset.bdView === viewId
+      || replacementRoot.querySelector(`[data-bd-owned^="${viewId}:"]`))) roots.unshift(replacementRoot);
+    for (const { original, segment, token } of patches) {
+      const copies = roots.flatMap(target => [...target.querySelectorAll(`[data-bd-owned="${token}"]`)]);
+      if (!copies.length && segment.parentNode) copies.push(segment);
+      copies.forEach((copy, index) => copy.replaceWith(index === 0 ? original : original.cloneNode(true)));
     }
-    root.classList.remove('bd-content');
-    if (oldColorMode === null) root.removeAttribute('data-bd-color-mode');
-    else root.setAttribute('data-bd-color-mode', oldColorMode);
-    for (const key of ownedProperties) {
-      const old = oldProperties.get(key);
-      if (old) root.style.setProperty(key, ...old); else root.style.removeProperty(key);
+    for (const { node, hadClass, token } of marked) {
+      const copies = new Set([node, ...roots.flatMap(target => [...target.querySelectorAll(`[data-bd-narration="${token}"]`)])]);
+      for (const copy of copies) {
+        copy.classList.remove('bd-narration');
+        copy.removeAttribute('data-bd-narration');
+        if (!hadClass && !copy.className) copy.removeAttribute('class');
+      }
     }
-    if (!hadStyle && root.style.length === 0) root.removeAttribute('style');
+    for (const target of roots) {
+      target.classList.remove('bd-content');
+      target.removeAttribute('data-bd-view');
+      if (oldColorMode === null) target.removeAttribute('data-bd-color-mode');
+      else target.setAttribute('data-bd-color-mode', oldColorMode);
+      for (const key of ownedProperties) {
+        const old = oldProperties.get(key);
+        if (old) target.style.setProperty(key, ...old); else target.style.removeProperty(key);
+      }
+      if (!hadStyle && target.style.length === 0) target.removeAttribute('style');
+    }
     signal?.removeEventListener('abort', dispose);
   }
   signal?.addEventListener('abort', dispose, { once: true });

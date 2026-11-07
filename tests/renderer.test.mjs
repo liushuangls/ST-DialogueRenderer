@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.1.0";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.0";
-import { DialogueController } from "../src/controller.js?v=2.1.0";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.1.0";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.1.1";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.1";
+import { DialogueController } from "../src/controller.js?v=2.1.1";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.1.1";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -173,6 +173,52 @@ test('finishing a stream validates the pending tail even without a final DOM mut
   context.streamingProcessor.isFinished = true; controller.schedule(); await tick();
   assert.equal(issues.length, 1); assert.equal(issues[0].mesid, 0); assert.equal(content.textContent, '@say:A|');
   controller.dispose(); f.dom.window.close();
+});
+
+test('rewriting message HTML preserves dialogue styling and can still restore copied projections', async () => {
+  const f = fixture();
+  const source = '# 标题\n\n' + raw + '\n\n普通正文\n\n```html\n<div>独立前端</div>\n```';
+  const content = addMessage(f.document, 0, source);
+  const context = contextFor([{ mes: source }]);
+  const controller = new DialogueController({ getContext: () => context, assets: f.assets, document: f.document });
+  try {
+    controller.start(); await tick();
+    // HTML frontends may replace a code block by rewriting the complete message HTML.
+    content.innerHTML = content.innerHTML.replace(/<pre>[\s\S]*?<\/pre>/, '<div class="external-view"><iframe title="独立前端"></iframe></div>');
+    const external = content.querySelector('.external-view');
+    const iframe = external.querySelector('iframe');
+    await tick();
+    assert.equal(content.classList.contains('bd-content'), true);
+    assert.equal(content.querySelectorAll('.dc-msg').length, 2);
+    assert.equal(content.querySelectorAll('.dc-msg .dc-msg').length, 0);
+    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), '52px');
+    assert.equal(content.querySelector('strong').textContent, '说出口的话');
+    assert.equal(content.querySelector('iframe'), iframe);
+    const rendered = content.innerHTML; await tick();
+    assert.equal(content.innerHTML, rendered, 'a rewrite must settle without repeated rendering');
+    controller.setSettings({ enabled: false });
+    assert.equal(content.querySelectorAll('.dc-msg,.bd-narration,[data-bd-owned],[data-bd-narration]').length, 0);
+    assert.match(content.textContent, /@say:测试用户/);
+    assert.equal(content.querySelector('.external-view'), external);
+    assert.equal(content.querySelector('iframe'), iframe);
+    assert.equal(context.chat[0].mes, source);
+    assert.equal(content.hasAttribute('style'), false);
+  } finally { controller.dispose(); f.dom.window.close(); }
+});
+
+test('a copied message root is restored before being decorated again', async () => {
+  const f = fixture(); const content = addMessage(f.document, 0, '# 标题\n\n' + raw);
+  const before = content.outerHTML;
+  const context = contextFor([{ mes: raw }]);
+  const controller = new DialogueController({ getContext: () => context, assets: f.assets, document: f.document });
+  try {
+    controller.start(); await tick();
+    const replacement = content.cloneNode(true); content.replaceWith(replacement); await tick();
+    assert.equal(controller.active.get(0)?.content, replacement);
+    assert.equal(replacement.querySelectorAll('.dc-msg').length, 2);
+    controller.setSettings({ enabled: false });
+    assert.equal(replacement.outerHTML, before);
+  } finally { controller.dispose(); f.dom.window.close(); }
 });
 
 test('ChatSurface content abort and unmount release all owned views', async () => {

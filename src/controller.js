@@ -1,6 +1,6 @@
-import { decorateMessage } from "./dom-renderer.js?v=2.1.0";
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.1.0";
-import { isDialogueCandidate } from "./protocol.js?v=2.1.0";
+import { decorateMessage } from "./dom-renderer.js?v=2.1.1";
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.1.1";
+import { isDialogueCandidate } from "./protocol.js?v=2.1.1";
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, onDiagnostics = () => {}, chatSurface }) {
@@ -104,8 +104,13 @@ export class DialogueController {
   release(id) {
     const entry = this.active.get(id);
     if (!entry) return;
-    this.mutate(() => entry.view.dispose());
+    this.mutate(() => entry.view.dispose({ replacementRoot: this.contentFor(id) }));
     this.active.delete(id);
+  }
+
+  contentFor(id) {
+    return this.managed ? this.mounted.get(id)?.content
+      : this.document.querySelector(`#chat > .mes[mesid="${id}"] .mes_text`);
   }
 
   reconcile() {
@@ -129,8 +134,7 @@ export class DialogueController {
     for (const id of selected) {
       if (this.active.has(id)) continue;
       const lease = this.managed ? this.mounted.get(id) : null;
-      const content = this.managed ? lease?.content
-        : this.document.querySelector(`#chat > .mes[mesid="${id}"] .mes_text`);
+      const content = this.contentFor(id);
       if (!content?.isConnected || lease?.signal.aborted) continue;
       // Avoid styling unrelated messages, tool output and third-party HTML frontends.
       const raw = String(context.chat[id]?.mes || '');

@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.1.0";
-import { AvatarDB } from "../src/storage.js?v=2.1.0";
-import { buildColorConfigKey } from "../src/context.js?v=2.1.0";
+import { createExtension } from "../src/extension.js?v=2.1.1";
+import { AvatarDB } from "../src/storage.js?v=2.1.1";
+import { buildColorConfigKey } from "../src/context.js?v=2.1.1";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -73,7 +73,19 @@ try {
   newest.innerHTML = converter.makeHtml('@say:测试用户|强作镇定|修改回复后重新渲染'); await tick();
   check(newest.querySelector('.dc-msg-text-content').textContent === '修改回复后重新渲染', 'edited message not rendered');
   passes.push('PASS 新回复移出旧窗口；修改消息不残留旧渲染');
+  newest.innerHTML = newest.innerHTML + '<div class="external-view"><iframe title="独立前端"></iframe></div>';
+  const externalFrame = newest.querySelector('iframe');
+  await tick();
+  const avatar = newest.querySelector('.dc-msg-avatar');
+  check(newest.classList.contains('bd-content'), 'HTML rewrite lost the style owner');
+  check(getComputedStyle(avatar).position === 'absolute', 'copied avatar lost its layout');
+  check(avatar.getBoundingClientRect().width === 52, 'copied avatar expanded to original image size');
+  check(getComputedStyle(newest.querySelector('.dc-msg-header')).display === 'flex', 'copied dialogue header lost its layout');
+  check(newest.querySelector('iframe') === externalFrame, 'foreign iframe was replaced');
   await app.setSettings({ enabled: false });
+  check(newest.querySelectorAll('.dc-msg,.bd-narration,[data-bd-owned],[data-bd-narration]').length === 0, 'copied projection survived disabling');
+  check(newest.querySelector('iframe') === externalFrame, 'disabling replaced a foreign iframe');
+  passes.push('PASS HTML 整段重写后头像保持 52px、姓名布局正常；关闭时恢复原文并保留 iframe');
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
   addMessage(raw);
   await app.setSettings({ enabled: true, recentAiCount: 3 }); await tick();
