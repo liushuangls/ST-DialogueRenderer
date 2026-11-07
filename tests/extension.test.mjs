@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.0.3";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.0.3";
-import { createExtension } from "../src/extension.js?v=2.0.3";
+import { AvatarDB } from "../src/storage.js?v=2.1.0";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.0";
+import { createExtension } from "../src/extension.js?v=2.1.0";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -95,20 +95,57 @@ test('saving styles commits the draft and closing restores the new saved baselin
   } finally { await f.close(); }
 });
 
-test('prompt panel exposes a read-only complete protocol and saves supplemental text without changing it', async () => {
+test('single prompt editor saves the exact template and preserves edits when mood words change', async () => {
   const f = await fixture();
   try {
     const manager = await f.app.openManager(); await manager._switchTab('mood');
     const doc = f.dom.window.document;
-    assert.equal(doc.getElementById('bam-protocol-preview').readOnly, true);
+    const editor = doc.getElementById('bam-prompt-template');
+    const initial = f.prompts.get(PROMPT_ID).text;
+    assert.equal(editor.readOnly, false);
+    assert.equal(editor.value, initial);
+    assert.equal(doc.querySelectorAll('#bam-tab-mood textarea').length, 1);
     assert.equal(doc.getElementById('bam-btn-export').style.display, '');
-    const supplement = doc.getElementById('bam-prompt-supplement');
-    supplement.value = '多用简洁自然的对话。'; supplement.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }));
-    const preview = doc.getElementById('bam-protocol-preview').value;
-    assert.match(preview, /多用简洁自然的对话/); assert.match(preview, /@think:/);
-    assert.equal(await f.db.getConfig('prompt_supplement'), null, 'preview must not save');
+    const custom = '  @say:姓名|情绪|正文\n用户角色用 {{user}}。多用简洁自然的对话。\n';
+    editor.value = custom; editor.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }));
+    assert.equal(doc.getElementById('bam-prompt-length').textContent, custom.length + ' 字符');
+    await manager._switchTab('style'); await manager._switchTab('mood');
+    assert.equal(doc.getElementById('bam-prompt-template').value, custom);
+    doc.querySelector('.bam-mood-word-delete').click();
+    assert.equal(doc.getElementById('bam-prompt-template').value, custom, 'mood changes must preserve the edited template');
+    assert.equal(await f.db.getConfig('prompt_template'), null, 'draft must not save');
+    assert.equal(f.prompts.get(PROMPT_ID).text, initial, 'draft must not change injection');
     await manager._saveMoodConfig();
-    assert.equal(await f.db.getConfig('prompt_supplement'), '多用简洁自然的对话。');
-    assert.equal(f.prompts.get(PROMPT_ID).text, preview);
+    assert.equal(await f.db.getConfig('prompt_template'), custom);
+    assert.equal(f.prompts.get(PROMPT_ID).text, custom);
   } finally { await f.close(); }
+});
+
+test('closing discards unsaved prompt edits and restoring defaults takes effect only after saving', async () => {
+  const f = await fixture();
+  const previousConfirm = globalThis.confirm;
+  try {
+    const manager = await f.app.openManager(); await manager._switchTab('mood');
+    const doc = f.dom.window.document;
+    const initial = doc.getElementById('bam-prompt-template').value;
+    const edit = text => {
+      const input = doc.getElementById('bam-prompt-template');
+      input.value = text; input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }));
+    };
+    const custom = '\n@say:姓名|情绪|正文\n简洁自然。\n';
+    edit(custom); await manager._saveMoodConfig();
+    edit('尚未保存的改动'); manager.close(); await tick();
+    await f.app.openManager(); await manager._switchTab('mood');
+    assert.equal(doc.getElementById('bam-prompt-template').value, custom);
+    assert.equal(f.prompts.get(PROMPT_ID).text, custom);
+    globalThis.confirm = () => true;
+    doc.getElementById('bam-btn-reset-mood').click();
+    assert.equal(doc.getElementById('bam-prompt-template').value, initial);
+    assert.equal(f.prompts.get(PROMPT_ID).text, custom);
+    await manager._saveMoodConfig();
+    assert.equal(f.prompts.get(PROMPT_ID).text, initial);
+  } finally {
+    globalThis.confirm = previousConfirm;
+    await f.close();
+  }
 });

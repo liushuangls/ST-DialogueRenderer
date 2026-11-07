@@ -1,4 +1,4 @@
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.0.3";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.0";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';

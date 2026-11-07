@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.3";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.3";
-import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.3";
-import { STORE_AVATARS } from "./storage.js?v=2.0.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.3";
-import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.3";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.1.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.1.0";
+import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.1.0";
+import { STORE_AVATARS } from "./storage.js?v=2.1.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.1.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.1.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_FETCH_TIMEOUT_MS = 8000;
@@ -49,7 +49,7 @@ class AvatarManagerPanel {
     this._moodConfigDirty = false;
     this._moodConfigDraft = null;
     this._boundMoodTab = null;
-    this._promptSupplementDraft = '';
+    this._promptDraft = '';
     this._avatarSyncUnsubscribe = avatarSync?.subscribe(status => {
       this._avatarSyncStatus = status;
       this._renderAvatarSyncStatus();
@@ -828,7 +828,7 @@ class AvatarManagerPanel {
     this._moodConfigDirty = false;
     this._moodConfigDraft = null;
     this._boundMoodTab = null;
-    this._promptSupplementDraft = '';
+    this._promptDraft = '';
     this._pendingBubbleRefresh = false;
     this._pendingBubbleRefreshDelay = 0;
     this._panelOffset = { x: 0, y: 0 };
@@ -2098,8 +2098,8 @@ class AvatarManagerPanel {
   // -- 情绪配置 Tab --
 
   async _loadMoodConfigTab() {
-    const { supplement, groups } = await loadPromptSettings(this.db);
-    this._promptSupplementDraft = supplement;
+    const { prompt, groups } = await loadPromptSettings(this.db);
+    this._promptDraft = prompt;
     this._moodConfigDraft = groups.map(group => ({ ...group, words: [...group.words] }));
     this._moodConfigLoaded = true;
     this._moodConfigDirty = false;
@@ -2110,16 +2110,12 @@ class AvatarManagerPanel {
   _renderMoodConfigContent() {
     const container = this._getMainDocument().getElementById('bam-tab-mood');
     if (!container) return;
-    const prompt = buildPrompt({ supplement: this._promptSupplementDraft, groups: this._moodConfigDraft });
     let html = `
-      <div class="bam-prompt-heading">注入预览 <span id="bam-prompt-length">${prompt.length} 字符</span></div>
-      <p class="bam-prompt-hint">固定展示协议由程序生成；下面是保存后将使用的完整模板，用户名等宏由酒馆在生成时替换。</p>
-      <textarea id="bam-protocol-preview" class="bam-prompt-textarea" aria-label="完整注入模板" readonly>${escapeHtmlAttr(prompt)}</textarea>
-      <label class="bam-prompt-heading" for="bam-prompt-supplement">补充提示词</label>
-      <p class="bam-prompt-hint">可补充表达偏好，留空即可使用默认规则。请保留固定协议的行头和字段。</p>
-      <textarea id="bam-prompt-supplement" class="bam-prompt-textarea bam-prompt-supplement" placeholder="可选的补充要求">${escapeHtmlAttr(this._promptSupplementDraft)}</textarea>
+      <label class="bam-prompt-heading" for="bam-prompt-template">注入提示词 <span id="bam-prompt-length">${this._promptDraft.length} 字符</span></label>
+      <p class="bam-prompt-hint">直接编辑，保存后生效；{{user}} 等宏由酒馆替换。请保留 @say: / @think: 的姓名|情绪|正文格式。</p>
+      <textarea id="bam-prompt-template" class="bam-prompt-textarea" aria-label="注入提示词"></textarea>
       <div class="bam-prompt-heading">情绪与差分匹配</div>
-      <p class="bam-prompt-hint">每组第一个词会作为简短参考注入，其余词只用于本地匹配。池外描述原样显示并使用基础头像。</p>`;
+      <p class="bam-prompt-hint">下方词表用于本地头像匹配，修改不会改变上方提示词。池外描述原样显示并使用基础头像。</p>`;
     for (let gi = 0; gi < this._moodConfigDraft.length; gi++) {
       const group = this._moodConfigDraft[gi];
       html += `<div class="bam-mood-group" data-group-index="${gi}" style="margin-bottom:14px">
@@ -2138,17 +2134,15 @@ class AvatarManagerPanel {
     html += `<div style="display:flex;justify-content:center;gap:12px;margin:16px 0 8px">
         <button id="bam-btn-save-mood" class="bam-prompt-button">保存</button>
         <button id="bam-btn-reset-mood" class="bam-prompt-button">恢复默认</button>
-      </div><div id="bam-mood-save-tip" class="bam-prompt-hint" role="status">修改后保存生效；导入和导出包含补充提示词与完整情绪配置。</div>`;
+      </div><div id="bam-mood-save-tip" class="bam-prompt-hint" role="status">修改后保存生效；导入和导出包含完整提示词与情绪配置。</div>`;
     container.innerHTML = html;
+    container.querySelector('#bam-prompt-template').value = this._promptDraft;
   }
 
-  _updatePromptPreview() {
+  _updatePromptLength() {
     const doc = this._getMainDocument();
-    const prompt = buildPrompt({ supplement: this._promptSupplementDraft, groups: this._moodConfigDraft });
-    const preview = doc.getElementById('bam-protocol-preview');
-    if (preview) preview.value = prompt;
     const count = doc.getElementById('bam-prompt-length');
-    if (count) count.textContent = prompt.length + ' 字符';
+    if (count) count.textContent = this._promptDraft.length + ' 字符';
   }
 
   _bindMoodConfigEvents() {
@@ -2156,10 +2150,10 @@ class AvatarManagerPanel {
     if (!tab || this._boundMoodTab === tab) return;
     this._boundMoodTab = tab;
     tab.addEventListener('input', event => {
-      if (event.target.id === 'bam-prompt-supplement') {
-        this._promptSupplementDraft = event.target.value;
+      if (event.target.id === 'bam-prompt-template') {
+        this._promptDraft = event.target.value;
         this._moodConfigDirty = true;
-        this._updatePromptPreview();
+        this._updatePromptLength();
       }
       const picker = event.target.closest('.bam-mood-color-picker');
       if (picker) {
@@ -2173,7 +2167,7 @@ class AvatarManagerPanel {
       const add = event.target.closest('.bam-mood-word-add');
       if (remove) {
         const group = this._moodConfigDraft[Number(remove.dataset.groupIndex)];
-        if (group.words.length === 1) { alert('每个分类至少保留一个参考词'); return; }
+        if (group.words.length === 1) { alert('每个分类至少保留一个匹配词'); return; }
         group.words.splice(Number(remove.dataset.wordIndex), 1);
       } else if (add) {
         const word = prompt('请输入简短的情绪词：')?.trim();
@@ -2182,8 +2176,8 @@ class AvatarManagerPanel {
         if (this._moodConfigDraft.some(group => group.words.includes(word))) { alert('这个词已属于一个情绪分组'); return; }
         this._moodConfigDraft[Number(add.dataset.groupIndex)].words.push(word);
       } else if (event.target.closest('#bam-btn-reset-mood')) {
-        if (!confirm('恢复默认情绪词并清空补充提示词？保存后生效。')) return;
-        this._promptSupplementDraft = '';
+        if (!confirm('恢复默认提示词和情绪词表？保存后生效。')) return;
+        this._promptDraft = buildDefaultPrompt();
         this._moodConfigDraft = DEFAULT_MOOD_GROUPS.map(group => ({ ...group, words: [...group.words] }));
       } else if (event.target.closest('#bam-btn-save-mood')) {
         await this._saveMoodConfig(); return;
@@ -2195,7 +2189,7 @@ class AvatarManagerPanel {
 
   async _saveMoodConfig() {
     try {
-      await this.db.savePromptSettings({ supplement: this._promptSupplementDraft, groups: this._moodConfigDraft });
+      await this.db.savePromptSettings({ prompt: this._promptDraft, groups: this._moodConfigDraft });
       await this.onPromptChanged();
       this._moodConfigDirty = false;
       const tip = this._getMainDocument().getElementById('bam-mood-save-tip');

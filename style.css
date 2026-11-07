@@ -1,4 +1,4 @@
-@import url('./src/bubble-style.css?v=2.0.3');
+@import url('./src/bubble-style.css?v=2.1.0');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -52,8 +52,6 @@
   padding:10px; border:1px solid #ffffff26; border-radius:8px; background:#0004;
   color:#ddd; font:12px/1.6 monospace;
 }
-#bam-panel .bam-prompt-supplement { min-height:90px }
-#bam-panel .bam-prompt-textarea[readonly] { color:#abb8cf }
 #bam-panel .bam-prompt-button { padding:8px 22px; border:1px solid #ffffff26; border-radius:6px; background:#4a6cf7; color:#fff; cursor:pointer }
 
 .bd-content .bd-segment { margin:0; padding:0 }

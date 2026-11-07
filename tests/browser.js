@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.0.3";
-import { AvatarDB } from "../src/storage.js?v=2.0.3";
-import { buildColorConfigKey } from "../src/context.js?v=2.0.3";
+import { createExtension } from "../src/extension.js?v=2.1.0";
+import { AvatarDB } from "../src/storage.js?v=2.1.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.1.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -96,12 +96,16 @@ try {
   check(getComputedStyle(text).fontSize === '14.5px', 'closing did not roll back unsaved size');
   passes.push('PASS 切换角色色/全局色即时生效；未保存关闭恢复；样式预览保留气泡节点');
   await app.openManager(); await manager._switchTab('mood');
-  const promptPreview = document.getElementById('bam-protocol-preview');
-  check(promptPreview.readOnly && promptPreview.value.includes('@say:'), 'fixed protocol preview unavailable');
-  check(promptPreview.value.length < 600, 'default prompt is too long');
+  const promptEditor = document.getElementById('bam-prompt-template');
+  check(!promptEditor.readOnly && promptEditor.value.includes('@say:'), 'editable prompt unavailable');
+  check(promptEditor.value.length < 600, 'default prompt is too long');
   check(document.getElementById('bam-btn-export').style.display !== 'none', 'template export inaccessible');
+  const customPrompt = promptEditor.value + '\n对话保持简短自然。';
+  promptEditor.value = customPrompt; promptEditor.dispatchEvent(new Event('input', { bubbles: true }));
+  await manager._saveMoodConfig();
+  check(prompts.get('dialogue-renderer/protocol') === customPrompt, 'edited prompt was not injected verbatim');
   manager.close();
-  passes.push('PASS 管理面板按需打开；固定协议只读；短提示词和模板导出入口');
+  passes.push('PASS 管理面板按需打开；单一提示词编辑保存；原样注入和模板导出入口');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

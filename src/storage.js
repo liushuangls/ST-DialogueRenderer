@@ -1,9 +1,9 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.0.3";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.0.3";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.3";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.0.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.3";
-import { PROTOCOL_VERSION, PROMPT_SUPPLEMENT_KEY, loadPromptSettings, validateSupplement } from "./protocol.js?v=2.0.3";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.1.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.1.0";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.1.0";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.1.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.1.0";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.1.0";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 1;
@@ -11,6 +11,7 @@ const STORE_AVATARS = 'avatars';
 const STORE_CONFIG = 'config';
 const STORE_MOOD_AVATARS = 'mood_avatars';
 const STORE_LOCAL_FONTS = 'local_fonts';
+const TEMPLATE_VERSION = '2.1';
 
 class AvatarDB {
   constructor({ dbName = DB_NAME } = {}) {
@@ -718,25 +719,25 @@ class AvatarDB {
 
   //  情绪与格式模板
   async exportTemplate() {
-    const { supplement, groups } = await loadPromptSettings(this);
+    const { prompt, groups } = await loadPromptSettings(this);
     return {
       type: 'bubble-template',
-      version: '2.0',
+      version: TEMPLATE_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       exportedAt: new Date().toISOString(),
-      promptSupplement: supplement,
+      promptTemplate: prompt,
       moodConfig: { groups },
     };
   }
 
-  async savePromptSettings({ supplement, groups }) {
-    const extra = validateSupplement(supplement);
+  async savePromptSettings({ prompt, groups }) {
+    const template = validatePromptTemplate(prompt);
     const moodConfig = JSON.stringify(normalizeMoodConfig({ groups }));
     await this._ensureDB();
     await new Promise((resolve, reject) => {
       const tx = this.db.transaction(STORE_CONFIG, 'readwrite');
       const store = tx.objectStore(STORE_CONFIG);
-      store.put({ key: PROMPT_SUPPLEMENT_KEY, value: extra });
+      store.put({ key: PROMPT_TEMPLATE_KEY, value: template });
       store.put({ key: 'mood_config', value: moodConfig });
       tx.oncomplete = () => resolve();
       tx.onabort = () => reject(new Error('提示词配置保存失败：' + (tx.error?.message || '事务已取消')));
@@ -750,10 +751,10 @@ class AvatarDB {
   }
 
   async _importTemplate(data) {
-    if (data.version !== '2.0' || data.protocolVersion !== PROTOCOL_VERSION) {
-      throw new Error('情绪与提示词模板必须使用对话协议 2.0 格式');
+    if (data.version !== TEMPLATE_VERSION || data.protocolVersion !== PROTOCOL_VERSION) {
+      throw new Error('情绪与提示词模板必须使用 ' + TEMPLATE_VERSION + ' 格式');
     }
-    await this.savePromptSettings({ supplement: data.promptSupplement, groups: data.moodConfig?.groups });
+    await this.savePromptSettings({ prompt: data.promptTemplate, groups: data.moodConfig?.groups });
     return { imported: 1 };
   }
 

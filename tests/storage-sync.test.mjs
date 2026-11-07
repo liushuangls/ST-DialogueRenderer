@@ -75,26 +75,30 @@ async function device(writer, files = new Map(), options = {}) {
   };
 }
 
-test('template export and import preserve supplemental prompts and local mood words atomically', async () => {
+test('template export and import preserve full prompt templates and local mood words atomically', async () => {
   const a = await device('template-A');
   const b = await device('template-B');
   try {
     const groups = a.api.DEFAULT_MOOD_GROUPS.map(group => ({ ...group, words: [...group.words] }));
     groups[0].words.push('心花怒放');
-    await a.db.savePromptSettings({ supplement: '对话保持自然简短。', groups });
+    const prompt = '  @say:姓名|情绪|正文\n对话保持自然简短，用户名是 {{user}}。\n';
+    await a.db.savePromptSettings({ prompt, groups });
     const exported = await a.db.exportTemplate();
     assert.equal(exported.protocolVersion, 2);
-    assert.equal(exported.promptSupplement, '对话保持自然简短。');
+    assert.equal(exported.version, '2.1');
+    assert.equal(exported.promptTemplate, prompt);
     await b.db.importFromFile(new Blob([JSON.stringify(exported)]), '_global_');
-    assert.equal(await b.db.getConfig('prompt_supplement'), exported.promptSupplement);
+    assert.equal(await b.db.getConfig('prompt_template'), exported.promptTemplate);
     assert.deepEqual(JSON.parse(await b.db.getConfig('mood_config')), JSON.parse(JSON.stringify(exported.moodConfig)));
     const injected = await b.api.buildInjectionPrompt(b.db);
-    assert.match(injected, /对话保持自然简短/);
+    assert.equal(injected, prompt);
     assert.match(injected, /@say:/);
     assert.doesNotMatch(injected, /心花怒放/);
     const before = await b.db.getAllConfig();
-    const invalid = { ...exported, promptSupplement: '不能部分写入', moodConfig: { groups: [{ id:'invalid' }] } };
+    const invalid = { ...exported, promptTemplate: '不能部分写入', moodConfig: { groups: [{ id:'invalid' }] } };
     await assert.rejects(b.db.importFromFile(new Blob([JSON.stringify(invalid)]), '_global_'), /情绪分组/);
+    assert.deepEqual(await b.db.getAllConfig(), before);
+    await assert.rejects(b.db.importFromFile(new Blob([JSON.stringify({ ...exported, promptTemplate: '' })]), '_global_'), /不能为空/);
     assert.deepEqual(await b.db.getAllConfig(), before);
   } finally { a.stop(); b.stop(); }
 });
@@ -231,7 +235,7 @@ test('local font bytes, CSS sources and font deletion sync; unrelated prompt/col
   await a.db.addLocalFont('测试字体',font,{fileName:'test.woff2'});
   await a.db.setConfig('style_narrationFontFamily','测试字体');
   await a.db.setConfig('style_cssFontUrls',JSON.stringify([{url:'https://example.com/fonts.css',families:['Remote']} ]));
-  await a.db.setConfig('prompt_supplement','private format');
+  await a.db.setConfig('prompt_template','private format');
   await a.db.setConfig('color_card_example__alice','#aabbcc');
   await a.sync.refresh();
   assert.equal(a.uploads.filter(x=>x.startsWith('bdv8_font_')).length,1);
@@ -239,7 +243,7 @@ test('local font bytes, CSS sources and font deletion sync; unrelated prompt/col
   assert.equal(await (await b.db.getLocalFont('测试字体')).fontBlob.text(),'test-font-bytes');
   assert.equal(await b.db.getConfig('style_narrationFontFamily'),'测试字体');
   assert.ok((await b.db.getConfig('style_cssFontUrls')).includes('fonts.css'));
-  assert.equal(await b.db.getConfig('prompt_supplement'),null);
+  assert.equal(await b.db.getConfig('prompt_template'),null);
   assert.equal(await b.db.getConfig('color_card_example__alice'),null);
   await b.db.deleteLocalFont('测试字体');await b.sync.refresh();await a.sync.refresh();
   assert.equal(await a.db.getLocalFont('测试字体'),null);
