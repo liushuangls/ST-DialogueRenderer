@@ -1,4 +1,4 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, GLOBAL_CHAR_ID, getCurrentCharId, buildColorConfigKey, normalizeMoodConfig } from './avatar-manager.js?v=1.0.2';
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, GLOBAL_CHAR_ID, getCurrentCharId, buildColorConfigKey, normalizeMoodConfig } from './avatar-manager.js?v=1.0.3';
 
 export class RenderAssets {
   constructor(db, { onError = console.error, loadFonts = async () => [] } = {}) {

@@ -1,5 +1,5 @@
-import { decorateMessage } from './dom-renderer.js?v=1.0.2';
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from './settings.js?v=1.0.2';
+import { decorateMessage } from './dom-renderer.js?v=1.0.3';
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from './settings.js?v=1.0.3';
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, chatSurface }) {

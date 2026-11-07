@@ -1,5 +1,5 @@
-import { createExtension } from '../src/extension.js?v=1.0.2';
-import { AvatarDB } from '../src/avatar-manager.js?v=1.0.2';
+import { createExtension } from '../src/extension.js?v=1.0.3';
+import { AvatarDB } from '../src/avatar-manager.js?v=1.0.3';
 
 const output = document.getElementById('result');
 const passes = [];

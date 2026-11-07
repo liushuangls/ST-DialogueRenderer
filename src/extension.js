@@ -2,10 +2,10 @@ import {
   AvatarDB, AvatarSyncV8, GlobalStyleSyncV8, AvatarManagerPanel, configureManagerRuntime,
   upgradeMoodConfig, upgradePromptConfig, buildInjectionPrompt, invalidateInjectionCache,
   resolveRequestedAvatarCharId, MOOD_GROUPS, buildColorConfigKey,
-} from './avatar-manager.js?v=1.0.2';
-import { RenderAssets } from './assets.js?v=1.0.2';
-import { DialogueController } from './controller.js?v=1.0.2';
-import { readSettings, SETTINGS_KEY } from './settings.js?v=1.0.2';
+} from './avatar-manager.js?v=1.0.3';
+import { RenderAssets } from './assets.js?v=1.0.3';
+import { DialogueController } from './controller.js?v=1.0.3';
+import { readSettings, SETTINGS_KEY } from './settings.js?v=1.0.3';
 
 const PROMPT_ID = 'bubble-dialogue-format-v8';
 
@@ -124,7 +124,28 @@ export function createExtension({ getContext, getRegexScripts = () => [], docume
     if (!container) throw new Error('未找到酒馆扩展设置容器');
     const section = document.createElement('div');
     section.className = 'bd-settings inline-drawer';
-    section.innerHTML = '<div class="inline-drawer-toggle inline-drawer-header"><b>对话渲染系统</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div><div class="inline-drawer-content"><label class="checkbox_label"><input class="bd-enabled" type="checkbox">启用对话渲染</label><label class="bd-count-label">最近 AI 回复数量 <input class="bd-count text_pole" type="number" min="1" max="100" step="1"></label><small>按实际 AI 回复计数，较早消息保留酒馆原始显示。</small><button class="bd-manager menu_button" type="button">头像、情绪与正文美化</button><div class="bd-status" role="status"></div><small>更新：扩展管理 → 对话渲染系统 → 更新，然后刷新页面。</small></div>';
+    section.innerHTML = `
+      <div class="inline-drawer-toggle inline-drawer-header">
+        <b>对话渲染系统</b><div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+      </div>
+      <div class="inline-drawer-content">
+        <div class="bd-switch-card">
+          <div class="bd-switch-copy">
+            <span class="bd-switch-title" id="bd-enabled-title">启用对话渲染</span>
+            <p class="bd-switch-description" id="bd-enabled-description">为角色台词和心理活动显示头像与情绪标签。</p>
+          </div>
+          <span class="bd-toggle">
+            <input id="bd-enabled" class="bd-enabled bd-toggle-input" type="checkbox" role="switch"
+              aria-labelledby="bd-enabled-title" aria-describedby="bd-enabled-description">
+            <label class="bd-toggle-label" for="bd-enabled" aria-label="启用对话渲染"></label>
+          </span>
+        </div>
+        <label class="bd-count-label">最近 AI 回复数量 <input class="bd-count text_pole" type="number" min="1" max="100" step="1"></label>
+        <small>按实际 AI 回复计数，较早消息保留酒馆原始显示。</small>
+        <button class="bd-manager menu_button" type="button">头像、情绪与正文美化</button>
+        <div class="bd-status" role="status"></div>
+        <small>更新：扩展管理 → 对话渲染系统 → 更新，然后刷新页面。</small>
+      </div>`;
     container.append(section);
     controls = { section, enabled: section.querySelector('.bd-enabled'), count: section.querySelector('.bd-count'),
       status: section.querySelector('.bd-status') };
