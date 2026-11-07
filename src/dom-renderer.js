@@ -1,4 +1,4 @@
-import { parseBubbleLine } from './settings.js';
+import { parseBubbleLine } from './settings.js?v=1.0.2';
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';

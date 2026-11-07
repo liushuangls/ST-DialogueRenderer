@@ -2,10 +2,10 @@ import {
   AvatarDB, AvatarSyncV8, GlobalStyleSyncV8, AvatarManagerPanel, configureManagerRuntime,
   upgradeMoodConfig, upgradePromptConfig, buildInjectionPrompt, invalidateInjectionCache,
   resolveRequestedAvatarCharId, MOOD_GROUPS, buildColorConfigKey,
-} from './avatar-manager.js';
-import { RenderAssets } from './assets.js';
-import { DialogueController } from './controller.js';
-import { readSettings, SETTINGS_KEY } from './settings.js';
+} from './avatar-manager.js?v=1.0.2';
+import { RenderAssets } from './assets.js?v=1.0.2';
+import { DialogueController } from './controller.js?v=1.0.2';
+import { readSettings, SETTINGS_KEY } from './settings.js?v=1.0.2';
 
 const PROMPT_ID = 'bubble-dialogue-format-v8';
 

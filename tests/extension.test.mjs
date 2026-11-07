@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory } from 'fake-indexeddb';
-import { AvatarDB } from '../src/avatar-manager.js';
-import { createExtension } from '../src/extension.js';
+import { AvatarDB } from '../src/avatar-manager.js?v=1.0.2';
+import { createExtension } from '../src/extension.js?v=1.0.2';
 
 test('extension toggles prompt and rendering together, rejects legacy duplicates, retains avatar data', async () => {
   const dom = new JSDOM('<div id="extensions_settings2"></div><div id="chat"><div class="mes" mesid="0"><div class="mes_text"><p>@bubble:A|平静|[已经经过显示正则的内容]</p></div></div></div>',
