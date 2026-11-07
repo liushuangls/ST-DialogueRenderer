@@ -5,8 +5,7 @@ import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 
-const main = { content: fs.readFileSync(new URL('../src/avatar-manager.js', import.meta.url), 'utf8') };
-const prefix = main.content.slice(0, main.content.lastIndexOf('\nexport {'));
+const version = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 async function device(writer, files = new Map(), options = {}) {
   const storage = new Map();
@@ -28,12 +27,26 @@ async function device(writer, files = new Map(), options = {}) {
     clearTimeout: id => timers.delete(id),
     window: {}, document: {},
   });
-  vm.runInContext(prefix + '\nglobalThis.testAPI={AvatarDB,AvatarSyncV8,GlobalStyleSyncV8,AvatarManagerPanel,DEFAULT_FORMAT_RULE,DEFAULT_MOOD_GROUPS,MOOD_GROUPS,normalizeMoodConfig,upgradeMoodConfig,upgradePromptText,upgradePromptConfig,buildInjectionPrompt,zipExtract,zipCreate,buildColorConfigKey};', context);
-  const api = context.testAPI;
+  const modules = new Map();
+  const moduleFor = (url) => {
+    const id = String(url);
+    if (!modules.has(id)) modules.set(id, new vm.SourceTextModule(fs.readFileSync(new URL(id), 'utf8'), {
+      context, identifier: id,
+    }));
+    return modules.get(id);
+  };
+  const api = {};
+  for (const name of ['config', 'context', 'protocol', 'storage', 'sync', 'manager-panel', 'zip']) {
+    const module = moduleFor(new URL(`../src/${name}.js?v=${version}`, import.meta.url));
+    if (module.status === 'unlinked') await module.link((specifier, ref) => moduleFor(new URL(specifier, ref.identifier)));
+    if (module.status === 'linked') await module.evaluate();
+    Object.assign(api, module.namespace);
+  }
+  api.configureContext(() => context.window.SillyTavern?.getContext?.() || { characters: [] });
   const db = new api.AvatarDB();
   await db.init();
   if (options.seed) for (const [key, value] of Object.entries(options.seed)) await db.setConfig(key, value);
-  const transport = new api.AvatarSyncV8(db);
+  const transport = new api.AvatarSync(db);
   transport.writerId = writer;
   const uploads = [];
   const downloads = [];
@@ -55,130 +68,69 @@ async function device(writer, files = new Map(), options = {}) {
     return path;
   };
   let applied = 0;
-  const sync = new api.GlobalStyleSyncV8(db, transport, async () => { applied++; });
+  const sync = new api.GlobalStyleSync(db, transport, async () => { applied++; });
   return { db, transport, sync, api, context, files, storage, uploads, downloads, timers,
     get applied() { return applied; }, setOffline(value) { offline = value; },
     stop() { sync.destroy(); transport.destroy(); db.db.close(); },
   };
 }
 
-test('8-group migration moves misplaced words, preserves custom colors and is idempotent', async () => {
-  const d = await device('A');
-  const old = { groups: [{ id:'mood-love',label:'爱恋',color:'#123456',words:['心动','认真','自定义'] },
-    { id:'mood-shy',label:'害羞',color:'#abcdef',words:['害羞','困惑','无语'] },
-    { id:'mood-joy',label:'喜悦',color:'#f59e0b',words:['开心','得意'] }] };
-  const upgraded = d.api.normalizeMoodConfig(old);
-  assert.equal(upgraded.groups.length,14);
-  assert.equal(upgraded.groups.find(g=>g.id==='mood-love').color,'#123456');
-  assert.deepEqual([...upgraded.groups.find(g=>g.id==='mood-love').words],['心动','自定义']);
-  assert.ok(upgraded.groups.find(g=>g.id==='mood-confused').words.includes('困惑'));
-  assert.ok(upgraded.groups.find(g=>g.id==='mood-proud').words.includes('得意'));
-  assert.deepEqual(d.api.normalizeMoodConfig(upgraded),upgraded);
-  await d.db.setConfig('mood_config',JSON.stringify(old));
-  const prompt=await d.api.buildInjectionPrompt(d.db);
-  assert.ok(prompt.includes('疲惫组'));
-  assert.ok(prompt.includes('用户（{{user}}）与其他角色采用完全相同的头像规则'));
-  assert.ok(prompt.includes('角色完整姓名固定填写 {{user}}'));
-  assert.doesNotMatch(prompt, /用户（\{\{user\}\}）的发言和心理活动保持普通正文/);
-  d.stop();
+test('template export and import preserve supplemental prompts and local mood words atomically', async () => {
+  const a = await device('template-A');
+  const b = await device('template-B');
+  try {
+    const groups = a.api.DEFAULT_MOOD_GROUPS.map(group => ({ ...group, words: [...group.words] }));
+    groups[0].words.push('心花怒放');
+    await a.db.savePromptSettings({ supplement: '对话保持自然简短。', groups });
+    const exported = await a.db.exportTemplate();
+    assert.equal(exported.protocolVersion, 2);
+    assert.equal(exported.promptSupplement, '对话保持自然简短。');
+    await b.db.importFromFile(new Blob([JSON.stringify(exported)]), '_global_');
+    assert.equal(await b.db.getConfig('prompt_supplement'), exported.promptSupplement);
+    assert.deepEqual(JSON.parse(await b.db.getConfig('mood_config')), JSON.parse(JSON.stringify(exported.moodConfig)));
+    const injected = await b.api.buildInjectionPrompt(b.db);
+    assert.match(injected, /对话保持自然简短/);
+    assert.match(injected, /@say:/);
+    assert.doesNotMatch(injected, /心花怒放/);
+    const before = await b.db.getAllConfig();
+    const invalid = { ...exported, promptSupplement: '不能部分写入', moodConfig: { groups: [{ id:'invalid' }] } };
+    await assert.rejects(b.db.importFromFile(new Blob([JSON.stringify(invalid)]), '_global_'), /情绪分组/);
+    assert.deepEqual(await b.db.getAllConfig(), before);
+  } finally { a.stop(); b.stop(); }
 });
 
-test('saved and imported v8 rules migrate only the former user-without-avatar sentence', async () => {
-  const d = await device('user-rule');
+test('renaming a character moves base, mood assets and color together and synchronizes both avatar types', async () => {
+  const a = await device('rename-A');
+  const b = await device('rename-B', a.files);
   try {
-    const legacy = '用户（{{user}}）的发言和心理活动保持普通正文，不加角色头像标记。';
-    const custom = '自定义前缀\n8. ' + legacy + '\n自定义后缀';
-    await d.db.setConfig('format_rule', custom);
-    assert.equal(await d.api.upgradePromptConfig(d.db), true);
-    const upgraded = await d.db.getConfig('format_rule');
-    assert.ok(upgraded.startsWith('自定义前缀\n8. '));
-    assert.ok(upgraded.endsWith('\n自定义后缀'));
-    assert.ok(upgraded.includes('与其他角色采用完全相同的头像规则'));
-    assert.equal(upgraded.includes(legacy), false);
-    assert.equal(await d.api.upgradePromptConfig(d.db), false);
-    const untouched = '我的自定义规则：只有特定场景使用 @bubble。';
-    assert.equal(d.api.upgradePromptText(untouched), untouched);
-
-    const oldTemplate = new Blob([JSON.stringify({
-      type: 'bubble-template', version: '8.0', formatRule: custom,
-      moodConfig: { version: '8.0', taxonomyVersion: 2, groups: d.api.DEFAULT_MOOD_GROUPS },
-    })]);
-    const imported = await d.db.importFromFile(oldTemplate, '_global_');
-    assert.equal(imported.imported, 1);
-    const importedRule = await d.db.getConfig('format_rule');
-    assert.equal(importedRule.includes(legacy), false);
-    assert.ok(importedRule.includes('自定义前缀'));
-    const exported = await d.db.exportTemplate();
-    assert.equal(exported.formatRule, importedRule);
-  } finally { d.stop(); }
-});
-
-test('default injected mood guidance allows free descriptions with base avatars', async () => {
-  const d = await device('mood-defaults');
-  try {
-    assert.equal(await d.api.upgradePromptConfig(d.db), false);
-    assert.deepEqual(Object.keys(await d.db.getAllConfig()), []);
-    const prompt = await d.api.buildInjectionPrompt(d.db);
-    assert.match(prompt, /优先参考词池/);
-    assert.match(prompt, /没有合适的词时允许使用简短的自由描述/);
-    assert.match(prompt, /池外词使用基础头像/);
-    assert.match(prompt, /不要为了匹配头像硬凑情绪/);
-    assert.match(prompt, /情绪字段不能为空/);
-    assert.match(prompt, /平和组：平静、/);
-    assert.doesNotMatch(prompt, /必须从情绪词池|必须从以下固定池|禁止自造新词|2-3字词/);
-  } finally { d.stop(); }
-});
-
-test('legacy mood rules upgrade in saved settings, injection, panel and template import without losing custom text', async () => {
-  const d = await device('mood-migration');
-  try {
-    const oldRule = '自定义格式前缀\n3. 角色台词和心理活动的情绪都不能为空，且必须从情绪词池中选取。\n自定义格式后缀';
-    const oldMoodTemplate = '自定义情绪前缀\n[情绪词约束]\n对话格式中情绪字段必须从以下固定池中选取（2-3字词），禁止自造新词：\n{{mood_groups}}\n自定义情绪后缀';
-    const moodConfig = JSON.stringify({ version: '8.0', taxonomyVersion: 2,
-      groups: [{ id: 'mood-calm', label: '我的分组', color: '#123456', words: ['自定义词'] }] });
-    await d.db.setConfig('format_rule', oldRule);
-    await d.db.setConfig('mood_prompt_template', oldMoodTemplate);
-    await d.db.setConfig('mood_config', moodConfig);
-
-    // Reads must use upgraded text even before the startup persistence step runs.
-    const prompt = await d.api.buildInjectionPrompt(d.db);
-    assert.doesNotMatch(prompt, /必须从情绪词池|必须从以下固定池|禁止自造新词/);
-    for (const text of ['自定义格式前缀', '自定义格式后缀', '自定义情绪前缀', '自定义情绪后缀', '我的分组组：自定义词']) {
-      assert.ok(prompt.includes(text), 'missing custom text: ' + text);
-    }
-    const panel = new d.api.AvatarManagerPanel(d.db);
-    panel._renderMoodConfigContent = () => {};
-    panel._bindMoodConfigEvents = () => {};
-    await panel._loadMoodConfigTab();
-    assert.match(panel._formatRuleDraft, /允许使用简短的自由描述/);
-    assert.match(panel._moodPromptTemplateDraft, /池外词使用基础头像/);
-    assert.ok(panel._moodPromptTemplateDraft.includes('{{mood_groups}}'));
-
-    let writes = 0;
-    const setConfig = d.db.setConfig.bind(d.db);
-    d.db.setConfig = async (...args) => { writes++; return setConfig(...args); };
-    vm.runInContext('_injectionCache = "stale prompt";', d.context);
-    assert.equal(await d.api.upgradePromptConfig(d.db), true);
-    assert.equal(writes, 2);
-    assert.equal(await d.api.buildInjectionPrompt(d.db), prompt);
-    assert.equal(await d.api.upgradePromptConfig(d.db), false);
-    assert.equal(writes, 2);
-    assert.equal(await d.db.getConfig('mood_config'), moodConfig);
-
-    const oldTemplate = new Blob([JSON.stringify({ type: 'bubble-template', version: '8.0', formatRule: oldRule })]);
-    const imported = await d.db.importFromFile(oldTemplate, '_global_');
-    assert.equal(imported.imported, 1);
-    const exported = await d.db.exportTemplate();
-    assert.match(exported.formatRule, /允许使用简短的自由描述/);
-    assert.ok(exported.formatRule.startsWith('自定义格式前缀\n3. '));
-    assert.ok(exported.formatRule.endsWith('\n自定义格式后缀'));
-    assert.equal(JSON.stringify(exported.moodConfig), moodConfig);
-
-    const untouched = '我的规则：优先选择符合语境的情绪；保留 {{mood_groups}}。';
-    assert.equal(d.api.upgradePromptText(untouched), untouched);
-    assert.equal(d.api.upgradePromptText(null), null);
-    assert.equal(d.api.upgradePromptText(''), '');
-  } finally { d.stop(); }
+    await a.db.add('_global_', 'Alice', new Blob(['base'], { type:'image/png' }));
+    await a.db.addMoodAvatar('_global_', 'Alice', 'mood-joy', new Blob(['joy'], { type:'image/png' }));
+    await a.db.setConfig(a.api.buildColorConfigKey('_global_', 'Alice'), '#112233');
+    await a.transport.flushNow();
+    await a.db.rename('_global_', 'Alice', 'Alicia');
+    assert.ok(await a.db.get('_global_', 'Alicia'));
+    assert.ok(await a.db.getMoodAvatar('_global_', 'Alicia', 'mood-joy'));
+    assert.equal(await a.db.getConfig(a.api.buildColorConfigKey('_global_', 'Alicia')), '#112233');
+    assert.equal(await a.db.get('_global_', 'Alice'), null);
+    assert.equal(await a.db.getMoodAvatar('_global_', 'Alice', 'mood-joy'), null);
+    assert.equal(await a.db.getConfig(a.api.buildColorConfigKey('_global_', 'Alice')), null);
+    await a.transport.flushNow();
+    await b.transport.refreshCurrentScope({ publishLocal: false, force: true });
+    assert.ok(await b.db.get('_global_', 'Alicia'));
+    assert.ok(await b.db.getMoodAvatar('_global_', 'Alicia', 'mood-joy'));
+    assert.equal(await b.db.get('_global_', 'Alice'), null);
+    assert.equal(await b.db.getMoodAvatar('_global_', 'Alice', 'mood-joy'), null);
+    await a.db.add('_global_', 'Existing', new Blob(['existing']));
+    await assert.rejects(a.db.rename('_global_', 'Alicia', 'Existing'), /不能覆盖/);
+    assert.ok(await a.db.get('_global_', 'Alicia'));
+    assert.ok(await a.db.getMoodAvatar('_global_', 'Alicia', 'mood-joy'));
+    assert.equal(await a.db.getConfig(a.api.buildColorConfigKey('_global_', 'Alicia')), '#112233');
+    await a.db.delete('_global_', 'Existing');
+    await a.db.setConfig(a.api.buildColorConfigKey('_global_', 'Existing'), null);
+    await a.db.rename('_global_', 'Alicia', 'Existing');
+    assert.ok(await a.db.getMoodAvatar('_global_', 'Existing', 'mood-joy'));
+    assert.equal(await a.db.getConfig(a.api.buildColorConfigKey('_global_', 'Existing')), '#112233');
+  } finally { a.stop(); b.stop(); }
 });
 
 test('new device receives global styles and cache; no-change refresh does not upload', async () => {
@@ -260,7 +212,7 @@ test('local font bytes, CSS sources and font deletion sync; unrelated prompt/col
   await a.db.addLocalFont('测试字体',font,{fileName:'test.woff2'});
   await a.db.setConfig('style_narrationFontFamily','测试字体');
   await a.db.setConfig('style_cssFontUrls',JSON.stringify([{url:'https://example.com/fonts.css',families:['Remote']} ]));
-  await a.db.setConfig('format_rule','private format');
+  await a.db.setConfig('prompt_supplement','private format');
   await a.db.setConfig('color_card_example__alice','#aabbcc');
   await a.sync.refresh();
   assert.equal(a.uploads.filter(x=>x.startsWith('bdv8_font_')).length,1);
@@ -268,7 +220,7 @@ test('local font bytes, CSS sources and font deletion sync; unrelated prompt/col
   assert.equal(await (await b.db.getLocalFont('测试字体')).fontBlob.text(),'test-font-bytes');
   assert.equal(await b.db.getConfig('style_narrationFontFamily'),'测试字体');
   assert.ok((await b.db.getConfig('style_cssFontUrls')).includes('fonts.css'));
-  assert.equal(await b.db.getConfig('format_rule'),null);
+  assert.equal(await b.db.getConfig('prompt_supplement'),null);
   assert.equal(await b.db.getConfig('color_card_example__alice'),null);
   await b.db.deleteLocalFont('测试字体');await b.sync.refresh();await a.sync.refresh();
   assert.equal(await a.db.getLocalFont('测试字体'),null);

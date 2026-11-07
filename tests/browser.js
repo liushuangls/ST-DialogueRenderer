@@ -1,5 +1,6 @@
-import { createExtension } from '../src/extension.js?v=1.0.3';
-import { AvatarDB } from '../src/avatar-manager.js?v=1.0.3';
+import { createExtension } from '../src/extension.js?v=2.0.0';
+import { AvatarDB } from '../src/storage.js?v=2.0.0';
+import { buildColorConfigKey } from '../src/context.js?v=2.0.0';
 
 const output = document.getElementById('result');
 const passes = [];
@@ -19,7 +20,7 @@ window.SillyTavern = { getContext: () => context };
 const db = new AvatarDB({ dbName: 'DialogueRenderer-browser-' + crypto.randomUUID() });
 const app = createExtension({ getContext: () => context, document, db, syncEnabled: false });
 const converter = new window.showdown.Converter({ tables: true, simpleLineBreaks: true });
-const raw = '# 第一章\n\n普通正文\n@bubble:测试用户|平静|[**这里显示的是替换前内容**]\n@bubble:测试用户|欲言又止|[*我还没想好怎么说*]\n\n> 场景引用\n\n@bubble:测试用户|强作镇定|[我没事。]';
+const raw = '# 第一章\n\n普通正文\n@say:测试用户|平静|**这里显示的是替换前内容**\n@think:测试用户|欲言又止|我还没想好怎么说\n\n> 场景引用\n\n@say:测试用户|强作镇定|_我没事。_ 请选择 [Enter] 或 A | B。';
 const tick = () => new Promise(resolve => setTimeout(resolve, 70));
 function addMessage(text, isUser = false) {
   const id = context.chat.length;
@@ -38,6 +39,7 @@ try {
   await db.add('_global_', '测试用户', picture('#526bab'));
   await db.addMoodAvatar('_global_', '测试用户', 'mood-calm', picture('#409867'));
   await db.setConfig('style_globalTextColor', '#292724');
+  await db.setConfig(buildColorConfigKey('_global_', '测试用户'), '#bc3344');
   await db.setConfig('style_narrationBgColor', '#fffdf5');
   await db.setConfig('style_narrationBgOpacity', 1);
   await app.assets.refresh();
@@ -56,30 +58,50 @@ try {
   for (const node of document.querySelectorAll('h1.bd-narration,blockquote.bd-narration,.dc-msg-text')) {
     check(getComputedStyle(node).color === 'rgb(41, 39, 36)', 'global color mismatch: ' + node.tagName);
   }
-  passes.push('PASS 默认最近 3 条 AI；保留历史；显示正则先执行；Markdown/自由情绪/基础头像');
+  check(document.querySelectorAll('[data-thought="1"]').length === 3, 'italic speech misclassified');
+  check(document.querySelector('[data-thought="0"] em')?.textContent === '我没事。', 'italic speech lost');
+  passes.push('PASS 最近 3 条 AI；保留历史与显示正则；显式类型、Markdown、自由情绪与基础头像');
   await app.setSettings({ enabled: false });
   check(document.querySelectorAll('.dc-msg').length === 0, 'disable did not restore host messages');
-  check(!prompts.get('bubble-dialogue-format-v8'), 'disable did not clear prompt');
+  check(!prompts.get('dialogue-renderer/protocol'), 'disable did not clear prompt');
   await app.setSettings({ enabled: true, recentAiCount: 1 }); await tick();
   check(app.controller.active.size === 1, 'count change');
   check(document.querySelectorAll('.dc-msg').length === 3, 'count limits rendering');
   passes.push('PASS 一键开关同步撤销提示词；改为最近 1 条立即生效');
   const newest = addMessage(raw); await tick();
   check(app.controller.active.size === 1, 'new message window');
-  newest.innerHTML = converter.makeHtml('@bubble:测试用户|强作镇定|[修改回复后重新渲染]'); await tick();
+  newest.innerHTML = converter.makeHtml('@say:测试用户|强作镇定|修改回复后重新渲染'); await tick();
   check(newest.querySelector('.dc-msg-text-content').textContent === '修改回复后重新渲染', 'edited message not rendered');
   passes.push('PASS 新回复移出旧窗口；修改消息不残留旧渲染');
   await app.setSettings({ enabled: false });
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
   addMessage(raw);
   await app.setSettings({ enabled: true, recentAiCount: 3 }); await tick();
-  await app.panel.open();
+  check(!app.panel, 'manager loaded before opening');
+  const manager = await app.openManager();
   check(document.getElementById('bam-panel'), 'avatar settings panel did not open');
-  await app.panel._loadStyleSettings();
-  await app.panel._loadMoodConfigTab();
-  check(document.getElementById('bam-mood-prompt-template-textarea').value.includes('允许使用简短的自由描述'), 'mood prompt UI did not migrate');
-  app.panel.close();
-  passes.push('PASS 原 v8 头像/情绪/美化管理面板可打开并关闭');
+  await manager._switchTab('style');
+  const text = document.querySelector('.dc-msg-text');
+  const bubbleNode = document.querySelector('.dc-msg');
+  for (const [mode, color] of [['character','rgb(188, 51, 68)'], ['global','rgb(41, 39, 36)']]) {
+    const radio = document.querySelector(`input[name="bam-color-mode"][value="${mode}"]`);
+    radio.checked = true; radio.dispatchEvent(new Event('change')); await tick();
+    check(getComputedStyle(text).color === color, 'preview color mode failed: ' + mode);
+    check(document.querySelector('.dc-msg') === bubbleNode, 'color change rebuilt bubbles');
+  }
+  const size = document.getElementById('bam-range-dialogue-font');
+  size.value = '20'; size.dispatchEvent(new Event('input')); await tick();
+  check(getComputedStyle(text).fontSize === '20px', 'font size preview');
+  manager.close(); await tick();
+  check(getComputedStyle(text).fontSize === '14.5px', 'closing did not roll back unsaved size');
+  passes.push('PASS 切换角色色/全局色即时生效；未保存关闭恢复；样式预览保留气泡节点');
+  await app.openManager(); await manager._switchTab('mood');
+  const promptPreview = document.getElementById('bam-protocol-preview');
+  check(promptPreview.readOnly && promptPreview.value.includes('@say:'), 'fixed protocol preview unavailable');
+  check(promptPreview.value.length < 600, 'default prompt is too long');
+  check(document.getElementById('bam-btn-export').style.display !== 'none', 'template export inaccessible');
+  manager.close();
+  passes.push('PASS 管理面板按需打开；固定协议只读；短提示词和模板导出入口');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

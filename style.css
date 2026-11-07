@@ -1,4 +1,4 @@
-@import url('./src/bubble-style.css?v=1.0.3');
+@import url('./src/bubble-style.css?v=2.0.0');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -38,7 +38,23 @@
 .bd-settings .bd-count { width:80px }
 .bd-settings .bd-manager { width:100%; margin:12px 0 }
 .bd-settings .bd-status { margin:8px 0; white-space:pre-wrap; overflow-wrap:anywhere }
+.bd-settings :is(.bd-diagnostics,.bd-error) { white-space:pre-wrap; overflow-wrap:anywhere; font-size:.9em }
+.bd-settings .bd-diagnostics { color:var(--SmartThemeQuoteColor, #c99054) }
+.bd-settings .bd-error { color:#d65a50 }
+.bd-settings :is(.bd-diagnostics,.bd-error):empty { display:none }
 .bd-settings small { display:block; opacity:.8; line-height:1.5 }
+
+#bam-panel .bam-prompt-heading { display:block; color:#ccc; font-size:13px; font-weight:600; margin:16px 0 8px }
+#bam-panel #bam-prompt-length { float:right; font-size:11px; font-weight:400; color:#888 }
+#bam-panel .bam-prompt-hint { color:#999; font-size:11px; line-height:1.6; margin:6px 0 10px }
+#bam-panel .bam-prompt-textarea {
+  box-sizing:border-box; width:100%; min-height:220px; max-height:340px; resize:vertical;
+  padding:10px; border:1px solid #ffffff26; border-radius:8px; background:#0004;
+  color:#ddd; font:12px/1.6 monospace;
+}
+#bam-panel .bam-prompt-supplement { min-height:90px }
+#bam-panel .bam-prompt-textarea[readonly] { color:#abb8cf }
+#bam-panel .bam-prompt-button { padding:8px 22px; border:1px solid #ffffff26; border-radius:6px; background:#4a6cf7; color:#fff; cursor:pointer }
 
 .bd-content .bd-segment { margin:0; padding:0 }
 .bd-content .dc-msg {
@@ -49,6 +65,7 @@
   color:var(--bd-color); font-size:var(--bd-dialogue-size); font-weight:var(--bd-dialogue-weight);
   line-height:var(--bd-dialogue-line-height); font-family:var(--bd-dialogue-font);
 }
+.bd-content[data-bd-color-mode="character"] .dc-msg-text { color:var(--bd-character-color, var(--bd-color)) }
 .bd-content .dc-msg-text :is(em,i,strong,q,code,a,span) { color:inherit }
 .bd-content .dc-msg-text .dc-msg-quote { color:var(--bd-color) }
 .bd-content .dc-msg-name { color:var(--bd-color); font-weight:var(--bd-name-weight); font-family:var(--bd-name-font) }

@@ -1,10 +1,9 @@
-import { parseBubbleLine } from './settings.js?v=1.0.3';
+import { parseDialogueLine, isDialogueCandidate } from './protocol.js?v=2.0.0';
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
 const PROTECTED_BLOCKS = PROTECTED.replace('code,', '');
 const STYLE_PROTECTED = PROTECTED_BLOCKS.replace('table,', '');
-const isContainerLine = text => /^(?:\s*<\/?(?:now_plot|content|TXT|正文|response|gametext|geme|maincontent)\s*>\s*)+$/i.test(text);
 const COLORS = ['#f47b67', '#45ddc0', '#e78bff', '#f0b232', '#58a6ff', '#ff9a76', '#7ee787', '#d2a8ff'];
 
 function element(doc, tag, className, text) {
@@ -66,7 +65,7 @@ function candidates(root) {
   const result = [];
   function visit(node) {
     if (node.nodeType === 3) {
-      if (node.textContent.includes('@bubble:')) result.push(node);
+      if (/(?:@say|@think)/.test(node.textContent)) result.push(node);
       return;
     }
     if (node.nodeType !== 1 || node.matches(PROTECTED)) return;
@@ -82,11 +81,11 @@ function candidates(root) {
   return result;
 }
 
-function renderName(doc, name, color) {
+function renderName(doc, name) {
   const holder = element(doc, 'span', 'dc-msg-name');
   [...name].forEach((letter, index) => {
     const span = element(doc, 'span', index === 0 ? 'dc-ch' : index === 2 ? 'dc-cs' : 'dc-cn', letter);
-    if (index === 0 || index === 2) span.style.color = color;
+    if (index === 0 || index === 2) span.style.color = 'var(--bd-accent-color)';
     holder.append(span);
   });
   return holder;
@@ -98,31 +97,28 @@ function bubble(doc, parsed, line, assets, isAlive) {
   const color = COLORS[hash % COLORS.length];
   const group = assets.getMood(parsed.mood);
   const range = rangeFor(doc, line, parsed.start, parsed.end);
-  const first = line.spans.find(span => parsed.start < span.end);
-  const last = line.spans.findLast(span => parsed.end > span.start);
-  const emphasis = first?.node.parentElement?.closest('em,i');
-  const thought = parsed.thought || Boolean(emphasis && emphasis.contains(last?.node)
-    && emphasis.textContent.trim() === parsed.text);
+  const thought = parsed.type === 'think';
   const msg = element(doc, 'div', 'dc-msg');
+  msg.style.setProperty('--bd-accent-color', color);
   msg.dataset.name = nameKey;
   msg.dataset.thought = thought ? '1' : '0';
   msg.dataset.moodGroup = group?.id || '';
   const avatar = element(doc, 'div', 'dc-msg-avatar');
   const placeholder = element(doc, 'div', 'dc-msg-avatar-ph', [...parsed.name][0]);
-  placeholder.style.background = color;
+  placeholder.style.background = 'var(--bd-accent-color)';
   avatar.append(placeholder);
   const heading = element(doc, 'div', 'dc-msg-header');
-  const name = renderName(doc, parsed.name, color);
+  const name = renderName(doc, parsed.name);
   const mood = element(doc, 'span', 'dc-msg-mood', parsed.mood);
   mood.dataset.moodMapped = group ? '1' : '0';
-  mood.style.color = group?.color || color;
+  mood.style.color = group?.color || 'var(--bd-accent-color)';
   mood.style.background = 'color-mix(in srgb, currentColor 15%, transparent)';
   heading.append(name, mood);
   const text = element(doc, 'div', 'dc-msg-text');
   const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
   body.append(range ? cloneInline(range) : doc.createTextNode(parsed.text));
   const quote = element(doc, 'span', 'dc-msg-quote' + (thought ? ' dc-msg-quote-thought' : ''), thought ? '＊' : '”');
-  quote.style.color = color;
+  quote.style.color = 'var(--bd-accent-color)';
   text.append(body, quote);
   msg.append(avatar, heading, text);
   assets.resolve(parsed.name, parsed.mood).then(resolved => {
@@ -133,17 +129,15 @@ function bubble(doc, parsed, line, assets, isAlive) {
       avatar.replaceChildren(image);
     }
     if (resolved.color) {
-      for (const node of name.querySelectorAll('.dc-ch,.dc-cs')) node.style.color = resolved.color;
-      quote.style.color = resolved.color;
-      placeholder.style.background = resolved.color;
-      if (!group) mood.style.color = resolved.color;
-      if (assets.settings.style_textColorMode === 'character') text.style.color = resolved.color;
+      msg.style.setProperty('--bd-accent-color', resolved.color);
+      msg.style.setProperty('--bd-character-color', resolved.color);
     }
   }).catch(error => { if (isAlive()) assets.onError(error); });
   return msg;
 }
 
 export function applyStyles(root, settings) {
+  root.dataset.bdColorMode = settings.style_textColorMode;
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
   const fonts = key => JSON.stringify(settings[key]) + ',system-ui,sans-serif';
   const size = Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
@@ -174,53 +168,84 @@ export function applyStyles(root, settings) {
 }
 
 /** Decorate host-formatted DOM; no raw-message regex pass and no code-block iframe. */
-export function decorateMessage(root, assets, { signal } = {}) {
-  if (signal?.aborted) return { dispose() {}, updateStyles() {} };
+export function decorateMessage(root, assets, { signal, streaming = false } = {}) {
+  if (signal?.aborted) return { dispose() {}, updateStyles() {}, diagnostics: [], count: 0 };
   if (root.classList.contains('bd-content')) throw new Error('该消息已经由对话渲染系统接管');
   const doc = root.ownerDocument;
+  const diagnostics = [];
+  let markerIndex = 0;
+  let count = 0;
+  let lastTextNode = null;
+  if (streaming) {
+    const walker = doc.createTreeWalker(root, doc.defaultView.NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) if (walker.currentNode.data.trim()) lastTextNode = walker.currentNode;
+  }
+  const isTail = line => {
+    const end = line.text.trimEnd().length;
+    const span = line.spans.findLast(item => end > item.start);
+    return span?.node === lastTextNode && span.from + end - span.start === lastTextNode.data.trimEnd().length;
+  };
+  const blocks = candidates(root).map(original => {
+    const lines = linesOf(original);
+    const parsed = lines.map(line => {
+      if (!isDialogueCandidate(line.text)) return { kind: 'text' };
+      const start = line.text.indexOf('@');
+      const span = line.spans.find(item => item.start <= start && start < item.end);
+      if (span?.node.parentElement?.closest('code,pre')) return { kind: 'text' };
+      markerIndex++;
+      const result = parseDialogueLine(line.text, { incomplete: streaming && isTail(line) });
+      if (result.kind === 'invalid') diagnostics.push({ marker: markerIndex, reason: result.reason });
+      if (result.kind === 'dialogue') count++;
+      return result;
+    });
+    return { original, lines, parsed };
+  });
+  if (!count) return { dispose() {}, updateStyles() {}, diagnostics, count };
   const patches = [];
   const marked = [];
   let alive = !signal?.aborted;
   const hadStyle = root.hasAttribute('style');
+  const oldColorMode = root.getAttribute('data-bd-color-mode');
   const oldProperties = new Map(Array.from(root.style).filter(key => key.startsWith('--bd-'))
     .map(key => [key, [root.style.getPropertyValue(key), root.style.getPropertyPriority(key)]]));
-  root.classList.add('bd-content');
-  applyStyles(root, assets.settings);
-  const ownedProperties = Array.from(root.style).filter(key => key.startsWith('--bd-'));
+  let ownedProperties = [];
+  try {
+    root.classList.add('bd-content');
+    applyStyles(root, assets.settings);
+    ownedProperties = Array.from(root.style).filter(key => key.startsWith('--bd-'));
 
-  for (const original of candidates(root)) {
-    const lines = linesOf(original);
-    const parsed = lines.map(line => {
-      const start = line.text.indexOf('@bubble:');
-      const span = line.spans.find(item => item.start <= start && start < item.end);
-      return span?.node.parentElement?.closest('code,pre') ? null : parseBubbleLine(line.text);
-    });
-    if (!parsed.some(Boolean) && !lines.some(line => isContainerLine(line.text))) continue;
-    const segment = element(doc, 'div', 'bd-segment');
-    segment.dataset.bdOwned = '';
-    let narration;
-    lines.forEach((line, index) => {
-      if (parsed[index]) {
-        narration = null;
-        segment.append(bubble(doc, parsed[index], line, assets, () => alive));
-      } else if (line.text.trim() && !isContainerLine(line.text)) {
-        if (!narration) { narration = element(doc, 'div', 'dc-narration-block'); segment.append(narration); }
-        const p = element(doc, 'p');
-        const range = rangeFor(doc, line);
-        if (range) p.append(cloneInline(range));
-        narration.append(p);
-      }
-    });
-    original.replaceWith(segment);
-    patches.push({ original, segment });
-  }
-  // Decorate only plain narrative blocks. Dedicated HTML/code runtimes keep ownership.
-  for (const node of root.children) {
-    if (!node.matches('p,h1,h2,h3,h4,h5,h6,blockquote,ul,ol,hr,table') || node.matches(STYLE_PROTECTED) || node.querySelector(STYLE_PROTECTED)) continue;
-    if (!node.classList.contains('bd-narration')) {
-      const hadClass = node.hasAttribute('class');
-      node.classList.add('bd-narration'); marked.push({ node, hadClass });
+    for (const { original, lines, parsed } of blocks) {
+      if (!parsed.some(line => line.kind === 'dialogue')) continue;
+      const segment = element(doc, 'div', 'bd-segment');
+      segment.dataset.bdOwned = '';
+      let narration;
+      lines.forEach((line, index) => {
+        if (parsed[index].kind === 'dialogue') {
+          narration = null;
+          segment.append(bubble(doc, parsed[index], line, assets, () => alive));
+        } else if (line.text.trim()) {
+          if (!narration) { narration = element(doc, 'div', 'dc-narration-block'); segment.append(narration); }
+          const p = element(doc, 'p');
+          const range = rangeFor(doc, line);
+          if (range) p.append(cloneInline(range));
+          narration.append(p);
+        }
+      });
+      original.replaceWith(segment);
+      patches.push({ original, segment });
     }
+    // Decorate only plain narrative blocks. Dedicated HTML/code runtimes keep ownership.
+    for (const node of root.children) {
+      if (!node.matches('p,h1,h2,h3,h4,h5,h6,blockquote,ul,ol,hr,table') || node.matches(STYLE_PROTECTED) || node.querySelector(STYLE_PROTECTED)) continue;
+      if (!node.classList.contains('bd-narration')) {
+        const hadClass = node.hasAttribute('class');
+        node.classList.add('bd-narration'); marked.push({ node, hadClass });
+      }
+    }
+  } catch (error) {
+    ownedProperties = Array.from(root.style).filter(key => key.startsWith('--bd-'));
+    dispose();
+    throw error;
   }
   function dispose() {
     if (!alive) return;
@@ -231,6 +256,8 @@ export function decorateMessage(root, assets, { signal } = {}) {
       if (!hadClass && !node.className) node.removeAttribute('class');
     }
     root.classList.remove('bd-content');
+    if (oldColorMode === null) root.removeAttribute('data-bd-color-mode');
+    else root.setAttribute('data-bd-color-mode', oldColorMode);
     for (const key of ownedProperties) {
       const old = oldProperties.get(key);
       if (old) root.style.setProperty(key, ...old); else root.style.removeProperty(key);
@@ -239,5 +266,5 @@ export function decorateMessage(root, assets, { signal } = {}) {
     signal?.removeEventListener('abort', dispose);
   }
   signal?.addEventListener('abort', dispose, { once: true });
-  return { dispose, updateStyles: settings => { if (alive) applyStyles(root, settings); } };
+  return { dispose, updateStyles: settings => { if (alive) applyStyles(root, settings); }, diagnostics, count };
 }

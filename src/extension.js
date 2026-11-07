@@ -1,117 +1,119 @@
-import {
-  AvatarDB, AvatarSyncV8, GlobalStyleSyncV8, AvatarManagerPanel, configureManagerRuntime,
-  upgradeMoodConfig, upgradePromptConfig, buildInjectionPrompt, invalidateInjectionCache,
-  resolveRequestedAvatarCharId, MOOD_GROUPS, buildColorConfigKey,
-} from './avatar-manager.js?v=1.0.3';
-import { RenderAssets } from './assets.js?v=1.0.3';
-import { DialogueController } from './controller.js?v=1.0.3';
-import { readSettings, SETTINGS_KEY } from './settings.js?v=1.0.3';
+import { AvatarDB } from './storage.js?v=2.0.0';
+import { AvatarSync, GlobalStyleSync } from './sync.js?v=2.0.0';
+import { configureContext } from './context.js?v=2.0.0';
+import { buildInjectionPrompt } from './protocol.js?v=2.0.0';
+import { RenderAssets } from './assets.js?v=2.0.0';
+import { DialogueController } from './controller.js?v=2.0.0';
+import { readSettings, SETTINGS_KEY } from './settings.js?v=2.0.0';
 
-const PROMPT_ID = 'bubble-dialogue-format-v8';
+const PROMPT_ID = 'dialogue-renderer/protocol';
 
-export function createExtension({ getContext, getRegexScripts = () => [], document = globalThis.document,
+export function createExtension({ getContext, document = globalThis.document,
   chatSurface = globalThis.__TAURITAVERN__?.api?.chatSurface,
   db = new AvatarDB(), syncEnabled = true } = {}) {
+  configureContext(getContext);
   const context = getContext();
   const settings = readSettings(context.extensionSettings[SETTINGS_KEY]);
   context.extensionSettings[SETTINGS_KEY] = settings;
+  let started = false;
   let disposed = false;
   let panel;
+  let panelPromise;
   let controls;
   let promptRevision = 0;
+  let diagnostics = [];
   const listeners = [];
   const report = error => {
+    if (disposed) return;
     console.error('[DialogueRenderer]', error);
-    if (controls) controls.status.textContent = error.message || String(error);
+    if (controls) controls.error.textContent = error.message || String(error);
   };
-  const avatarSync = syncEnabled ? new AvatarSyncV8(db) : null;
-  const styleSync = syncEnabled ? new GlobalStyleSyncV8(db, avatarSync, () => refresh()) : null;
-  const assets = new RenderAssets(db, { onError: report,
-    loadFonts: (...args) => panel._getAvailableFontOptions(...args) });
-  panel = new AvatarManagerPanel(db, avatarSync, styleSync);
-  const ready = db.init().then(async () => {
-    await upgradeMoodConfig(db);
-    await upgradePromptConfig(db);
-    await assets.refresh();
-  });
-  const controller = new DialogueController({ getContext, assets, document, ready, onError: report, chatSurface });
-  const avatarApi = {
-    async getAvatar(name, charId) {
-      await ready;
-      const scope = resolveRequestedAvatarCharId(charId);
-      return scope ? db.getBlobUrl(scope, name) : null;
-    },
-    async getMoodAvatar(name, mood, charId) {
-      await ready;
-      const scope = resolveRequestedAvatarCharId(charId);
-      const group = MOOD_GROUPS.find(item => item.id === mood || item.label === mood);
-      return scope ? db.getMoodAvatarBlobUrl(scope, name, group?.id || mood) : null;
-    },
-    async getColor(name, charId) {
-      await ready;
-      const scope = resolveRequestedAvatarCharId(charId);
-      return scope ? db.getConfig(buildColorConfigKey(scope, name)) : null;
-    },
-    async syncNow() {
-      await ready;
-      return Promise.all([avatarSync?.refreshCurrentScope({ publishLocal: true, force: true }), styleSync?.refresh()]);
-    },
-    getSyncStatus: () => avatarSync?.getStatus() || { state: 'local', text: '本地模式' },
-  };
+  const avatarSync = syncEnabled ? new AvatarSync(db) : null;
+  const styleSync = syncEnabled ? new GlobalStyleSync(db, avatarSync, async () => {
+    await refresh();
+    if (panel?.isOpen) await panel.onGlobalStyleApplied();
+  }) : null;
+  const assets = new RenderAssets(db, { onError: report });
+  const ready = db.init().then(() => assets.refresh());
+  const controller = new DialogueController({ getContext, assets, document, ready, onError: report, chatSurface,
+    onDiagnostics: value => { diagnostics = value; renderStatus(); } });
 
-  function legacyConflicts() {
-    if (globalThis.avatarManagerPanelV8) return ['旧版管理脚本'];
-    const regexDisabled = getContext().extensionSettings.disabledExtensions?.includes('regex');
-    return regexDisabled ? [] : getRegexScripts({ allowedOnly: true })
-      .filter(rule => !rule.disabled && rule.markdownOnly
-        && /id=["']dc(?:Lite)?Root["']/.test(rule.replaceString || ''))
-      .map(rule => rule.scriptName);
-  }
-
-  async function applyPrompt(content) {
-    const conflicts = legacyConflicts();
-    const enabled = settings.enabled && !disposed && !conflicts.length;
-    getContext().setExtensionPrompt(PROMPT_ID, enabled ? content : '', 1, 0, false, 0);
-    controller.suspend(conflicts.length > 0);
-    if (controls) controls.status.textContent = conflicts.length
-      ? '请先停用旧版脚本/渲染正则：' + conflicts.join('、')
-      : enabled ? `已启用 · 最近 ${settings.recentAiCount} 条 AI 回复` : '已关闭 · 显示原始消息';
+  function renderStatus() {
+    if (!controls) return;
+    controls.status.textContent = settings.enabled ? `已启用 · 最近 ${settings.recentAiCount} 条 AI 回复` : '已关闭 · 显示原始消息';
+    controls.diagnostics.textContent = diagnostics.slice(0, 5)
+      .map(issue => `消息 #${issue.mesid}，第 ${issue.marker} 个标记：${issue.reason}`).join('\n');
+    if (diagnostics.length > 5) controls.diagnostics.textContent += `\n另有 ${diagnostics.length - 5} 处格式问题。`;
   }
 
   async function syncPrompt() {
     const revision = ++promptRevision;
     await ready;
-    const content = settings.enabled ? await buildInjectionPrompt(db) : '';
-    if (!disposed && revision === promptRevision) await applyPrompt(content);
+    if (disposed) return;
+    const text = settings.enabled ? await buildInjectionPrompt(db) : '';
+    if (disposed || revision !== promptRevision) return;
+    // IN_CHAT, depth 0, no world-info scan, SYSTEM role.
+    getContext().setExtensionPrompt(PROMPT_ID, text, 1, 0, false, 0);
+    renderStatus();
   }
 
   async function refresh() {
     await ready;
     if (disposed) return;
     await assets.refresh();
-    await assets.syncFonts(document);
-    if (!disposed) controller.refresh();
+    if (disposed) return;
+    await syncPrompt();
+    controller.refresh();
+    if (settings.enabled || panel?.isOpen) await assets.syncFonts(document);
   }
 
-  configureManagerRuntime({
-    getContext, applyPrompt,
-    previewStyles: async values => {
-      await ready;
-      controller.previewStyles(values);
-      await assets.syncFonts(document);
-    },
-    refresh: () => refresh().catch(report),
-  });
+  async function previewStyles(changes) {
+    if (disposed) return;
+    const previousUrl = assets.settings.style_fontConfigUrl;
+    controller.previewStyles(changes);
+    if (previousUrl !== assets.settings.style_fontConfigUrl) await assets.syncFonts(document);
+  }
+
+  async function saveStyles() {
+    if (disposed) return;
+    const fallback = assets.savedSettings.style_globalAvatarFallback;
+    await assets.refresh();
+    if (disposed) return;
+    controller.previewStyles(null);
+    if (fallback !== assets.savedSettings.style_globalAvatarFallback) controller.refresh();
+    await assets.syncFonts(document);
+  }
+
+  async function openManager() {
+    await ready;
+    if (disposed) throw new Error('对话渲染扩展已关闭');
+    if (!panelPromise) {
+      panelPromise = import('./manager-panel.js?v=2.0.0').then(({ AvatarManagerPanel }) => {
+        if (disposed) throw new Error('对话渲染扩展已关闭');
+        panel = new AvatarManagerPanel(db, avatarSync, styleSync, { document, fonts: assets.fonts,
+          onPreview: previewStyles, onClose: () => previewStyles(null), onRefresh: refresh,
+          onStylesSaved: saveStyles, onFontsChanged: () => assets.syncFonts(document),
+          onPromptChanged: refresh, onError: report });
+        return panel;
+      }).catch(error => { panelPromise = null; throw error; });
+    }
+    const manager = await panelPromise;
+    await manager.open();
+    return manager;
+  }
 
   async function setSettings(next) {
     const normalized = readSettings({ ...settings, ...next });
+    const wasEnabled = settings.enabled;
     Object.assign(settings, normalized);
     getContext().extensionSettings[SETTINGS_KEY] = { ...settings };
     getContext().saveSettingsDebounced();
     await ready;
+    if (disposed) return;
     controller.setSettings(settings);
     if (!settings.enabled) { assets.cache.clear(); db.revokeAllUrls(); }
     await syncPrompt();
+    if (settings.enabled && !wasEnabled) await assets.syncFonts(document);
     if (controls) {
       controls.enabled.checked = settings.enabled;
       controls.count.value = String(settings.recentAiCount);
@@ -144,38 +146,41 @@ export function createExtension({ getContext, getRegexScripts = () => [], docume
         <small>按实际 AI 回复计数，较早消息保留酒馆原始显示。</small>
         <button class="bd-manager menu_button" type="button">头像、情绪与正文美化</button>
         <div class="bd-status" role="status"></div>
-        <small>更新：扩展管理 → 对话渲染系统 → 更新，然后刷新页面。</small>
+        <div class="bd-diagnostics" role="status"></div><div class="bd-error" role="alert"></div>
+        <small>协议 2.0：台词使用 @say，心理活动使用 @think。更新扩展后请刷新页面。</small>
       </div>`;
     container.append(section);
     controls = { section, enabled: section.querySelector('.bd-enabled'), count: section.querySelector('.bd-count'),
-      status: section.querySelector('.bd-status') };
+      status: section.querySelector('.bd-status'), diagnostics: section.querySelector('.bd-diagnostics'), error: section.querySelector('.bd-error') };
     controls.enabled.checked = settings.enabled;
     controls.count.value = String(settings.recentAiCount);
     controls.enabled.addEventListener('change', () => setSettings({ enabled: controls.enabled.checked }).catch(report));
     controls.count.addEventListener('change', () => setSettings({ recentAiCount: Number(controls.count.value) }).catch(error => {
       controls.count.value = String(settings.recentAiCount); report(error);
     }));
-    section.querySelector('.bd-manager').addEventListener('click', () => ready.then(() => panel.open()).catch(report));
+    section.querySelector('.bd-manager').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await openManager(); } catch (error) { report(error); } finally { button.disabled = false; }
+    });
+    renderStatus();
   }
 
   function start() {
-    for (const name of ['BubbleAvatarV8', 'BubbleAvatar']) {
-      if (!document.defaultView[name]) {
-        document.defaultView[name] = avatarApi;
-        listeners.push(() => { if (document.defaultView[name] === avatarApi) delete document.defaultView[name]; });
-      }
-    }
+    if (started || disposed) return;
+    started = true;
     controller.start();
     const initialized = async () => {
+      if (disposed) return;
       try {
         mountControls();
         await ready;
         if (disposed) return;
         await syncPrompt();
-        await assets.syncFonts(document);
         controller.schedule();
+        if (settings.enabled) assets.syncFonts(document).catch(report);
         if (syncEnabled) {
-          avatarSync.init().then(() => refresh()).catch(report);
+          avatarSync.init().then(refresh).catch(report);
           styleSync.refresh().catch(report);
         }
       } catch (error) { report(error); }
@@ -184,16 +189,15 @@ export function createExtension({ getContext, getRegexScripts = () => [], docume
     context.eventSource.on(event, initialized);
     listeners.push(() => context.eventSource.removeListener(event, initialized));
     const chatChanged = () => {
-      invalidateInjectionCache();
       assets.cache.clear();
       syncPrompt().catch(report);
-      if (syncEnabled) avatarSync.refreshCurrentScope({ publishLocal: true }).then(() => refresh()).catch(report);
+      if (syncEnabled) avatarSync.refreshCurrentScope({ publishLocal: true }).then(refresh).catch(report);
     };
     context.eventSource.on(context.eventTypes.CHAT_CHANGED, chatChanged);
     listeners.push(() => context.eventSource.removeListener(context.eventTypes.CHAT_CHANGED, chatChanged));
     const resume = () => {
       if (document.visibilityState === 'hidden' || disposed || !syncEnabled) return;
-      Promise.all([avatarSync.refreshCurrentScope({ publishLocal: true }), styleSync.refresh()]).then(() => refresh()).catch(report);
+      Promise.all([avatarSync.refreshCurrentScope({ publishLocal: true }), styleSync.refresh()]).then(refresh).catch(report);
     };
     document.addEventListener('visibilitychange', resume);
     document.defaultView.addEventListener('online', resume);
@@ -210,16 +214,13 @@ export function createExtension({ getContext, getRegexScripts = () => [], docume
     controller.dispose();
     getContext().setExtensionPrompt(PROMPT_ID, '', 1, 0, false, 0);
     for (const off of listeners) off();
-    if (panel.isOpen) panel.close();
-    panel._avatarSyncUnsubscribe?.(); panel._styleSyncUnsubscribe?.();
-    if (panel._livePreviewTimer) clearTimeout(panel._livePreviewTimer);
+    panel?.destroy();
     avatarSync?.destroy(); styleSync?.destroy(); assets.destroy();
     controls?.section.remove();
-    configureManagerRuntime(null);
     await ready.catch(() => {});
-    db.revokeAllUrls();
-    db.db?.close();
+    db.revokeAllUrls(); db.db?.close();
+    configureContext(null);
   }
 
-  return { start, dispose, setSettings, refresh, controller, assets, panel, ready };
+  return { start, dispose, setSettings, refresh, openManager, controller, assets, ready, get panel() { return panel; } };
 }

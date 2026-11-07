@@ -1,8 +1,7 @@
 import { getContext } from '../../../extensions.js';
-import { getRegexScripts } from '../../regex/engine.js';
-import { createExtension } from './src/extension.js?v=1.0.3';
+import { createExtension } from './src/extension.js?v=2.0.0';
 
-const extension = createExtension({ getContext, getRegexScripts });
+const extension = createExtension({ getContext });
 extension.start();
 
 export async function onDisable() {

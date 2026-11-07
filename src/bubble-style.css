@@ -5,7 +5,7 @@
 
 /* === 普通正文：无角色名、无头像 === */
 .bd-content .dc-narration-block{position:relative;padding:0 16px;margin:8px 0;font-family:"Noto Sans SC","Source Han Sans SC",sans-serif;background:transparent}
-.bd-content .dc-narration-block p{margin:0.5em 0;text-indent:var(--dc-text-indent,0em)}
+.bd-content .dc-narration-block p{margin:0.5em 0;text-indent:var(--bd-indent,0em)}
 
 /* === 对话消息 === */
 .bd-content .dc-msg{position:relative;padding:10px 16px 10px 76px;margin:10px 0;min-height:56px}
@@ -42,25 +42,6 @@
 /* === 装饰大引号 / 心里话装饰符 === */
 .bd-content .dc-msg-quote{display:inline-block;position:relative;font-size:2.3rem;font-family:Georgia,"Times New Roman",serif;line-height:0;height:0.5em;margin-left:5px;top:0.45em;transform:scaleY(0.96);transform-origin:center bottom;overflow:visible;vertical-align:baseline;pointer-events:none;font-weight:400}
 .bd-content .dc-msg-quote-thought{font-size:1.35rem;top:.06em;height:auto;line-height:1;margin-left:6px;transform:none;vertical-align:baseline}
-
-/* === HTML 嵌入块兼容 === */
-.bd-content .dc-html-embed{margin:12px 0}
-.bd-content .dc-html-iframe{display:block;width:100%;min-height:120px;border:0;background:transparent;overflow:hidden;border-radius:12px}
-
-/* === 颜色系统（8色） === */
-.bd-content .dc-c1{color:#f47b67}.bd-content .dc-c2{color:#45ddc0}.bd-content .dc-c3{color:#e78bff}.bd-content .dc-c4{color:#f0b232}
-.bd-content .dc-c5{color:#58a6ff}.bd-content .dc-c6{color:#ff9a76}.bd-content .dc-c7{color:#7ee787}.bd-content .dc-c8{color:#d2a8ff}
-.bd-content .dc-bg1{background:#f47b67}.bd-content .dc-bg2{background:#45ddc0}.bd-content .dc-bg3{background:#e78bff}.bd-content .dc-bg4{background:#f0b232}
-.bd-content .dc-bg5{background:#58a6ff}.bd-content .dc-bg6{background:#ff9a76}.bd-content .dc-bg7{background:#7ee787}.bd-content .dc-bg8{background:#d2a8ff}
-/* 情绪标签背景（低透明度） */
-.bd-content .dc-mood1{background:rgba(244,123,103,0.15);color:#f47b67}
-.bd-content .dc-mood2{background:rgba(69,221,192,0.15);color:#45ddc0}
-.bd-content .dc-mood3{background:rgba(231,139,255,0.15);color:#e78bff}
-.bd-content .dc-mood4{background:rgba(240,178,50,0.15);color:#f0b232}
-.bd-content .dc-mood5{background:rgba(88,166,255,0.15);color:#58a6ff}
-.bd-content .dc-mood6{background:rgba(255,154,118,0.15);color:#ff9a76}
-.bd-content .dc-mood7{background:rgba(126,231,135,0.15);color:#7ee787}
-.bd-content .dc-mood8{background:rgba(210,168,255,0.15);color:#d2a8ff}
 
 /* === Markdown 样式（旁白用） === */
 .bd-content .dc-narration-block strong{font-weight:700}

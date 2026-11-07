@@ -21,23 +21,3 @@ export function recentAiMessageIds(chat, count) {
   }
   return ids;
 }
-
-export function parseBubbleLine(line) {
-  // Some presets/models append one closing separator; it is not part of the dialogue.
-  const match = /^\s*@bubble:([^|\r\n]+)\|([^|\r\n]+)\|\[([^|[\]\r\n]+)\]\s*\|?\s*$/.exec(line);
-  if (!match) return null;
-  const name = match[1].trim();
-  const mood = match[2].trim();
-  let text = match[3].trim();
-  if (!name || !mood || !text || /^(旁白|narrator)$/i.test(name)) return null;
-  const thought = /^\*.+\*$/.test(text);
-  const bracket = line.indexOf('[', line.indexOf('|', line.indexOf('|') + 1) + 1);
-  let start = bracket + 1 + match[3].indexOf(text);
-  let end = start + text.length;
-  if (thought) {
-    text = text.slice(1, -1).trim();
-    start = line.indexOf(text, start + 1);
-    end = start + text.length;
-  }
-  return text ? { name, mood, text, thought, start, end } : null;
-}
