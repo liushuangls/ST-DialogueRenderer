@@ -1,6 +1,6 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, normalizeMoodConfig } from "./config.js?v=2.0.1";
-import { GLOBAL_CHAR_ID, getCurrentCharId, buildColorConfigKey } from "./context.js?v=2.0.1";
-import { FontCatalog } from "./fonts.js?v=2.0.1";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, normalizeMoodConfig } from "./config.js?v=2.0.2";
+import { GLOBAL_CHAR_ID, getCurrentCharId, buildColorConfigKey } from "./context.js?v=2.0.2";
+import { FontCatalog } from "./fonts.js?v=2.0.2";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog(db) } = {}) {

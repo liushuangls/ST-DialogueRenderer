@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.1";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.1";
-import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.1";
-import { STORE_AVATARS, STORE_MOOD_AVATARS } from "./storage.js?v=2.0.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.1";
-import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.1";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.0.2";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.0.2";
+import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.0.2";
+import { STORE_AVATARS, STORE_MOOD_AVATARS } from "./storage.js?v=2.0.2";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.0.2";
+import { buildPrompt, loadPromptSettings } from "./protocol.js?v=2.0.2";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_FETCH_TIMEOUT_MS = 8000;
@@ -1124,9 +1124,6 @@ class AvatarManagerPanel {
         <input id="bam-range-compress-quality" type="range" min="0.5" max="1.0" step="0.01" value="${STYLE_DEFAULTS.style_imageCompressQuality}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
         <div style="color:#555; font-size:11px; margin-top:4px;">质量 0.8 视觉几乎无损，体积可减少 30~60%。设为 1.0 则近似无损。</div>
       </div>
-
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin:20px 0 10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">Markdown 渲染</div>
-      <div style="margin-bottom:20px;color:#aaa;font-size:12px;line-height:1.6;">沿用酒馆完成的 Markdown 格式，支持标题、列表、引用和行内格式。插件在显示正则之后处理对话标记；Markdown 行为在酒馆设置中调整。</div>
 
       <div style="display:flex; justify-content:center; gap:12px; margin-bottom:12px;">
         <button id="bam-btn-save-style" style="background:#4a6cf7; border:none; color:#fff; padding:8px 24px; border-radius:6px; cursor:pointer; font-size:13px; opacity:0.65;" disabled>保存样式</button>
