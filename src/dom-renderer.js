@@ -1,4 +1,4 @@
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.1";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.2";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
@@ -96,14 +96,12 @@ function bubble(doc, parsed, line, assets, isAlive) {
   const nameKey = parsed.name.toLowerCase();
   const hash = [...nameKey].reduce((sum, char) => ((sum * 31) + char.codePointAt(0)) >>> 0, 0);
   const color = COLORS[hash % COLORS.length];
-  const group = assets.getMood(parsed.mood);
   const range = rangeFor(doc, line, parsed.start, parsed.end);
   const thought = parsed.type === 'think';
   const msg = element(doc, 'div', 'dc-msg');
   msg.style.setProperty('--bd-accent-color', color);
   msg.dataset.name = nameKey;
   msg.dataset.thought = thought ? '1' : '0';
-  msg.dataset.moodGroup = group?.id || '';
   const avatar = element(doc, 'div', 'dc-msg-avatar');
   const placeholder = element(doc, 'div', 'dc-msg-avatar-ph', [...parsed.name][0]);
   placeholder.style.background = 'var(--bd-accent-color)';
@@ -111,8 +109,6 @@ function bubble(doc, parsed, line, assets, isAlive) {
   const heading = element(doc, 'div', 'dc-msg-header');
   const name = renderName(doc, parsed.name);
   const mood = element(doc, 'span', 'dc-msg-mood', parsed.mood);
-  mood.dataset.moodMapped = group ? '1' : '0';
-  mood.style.color = group?.color || 'var(--bd-accent-color)';
   mood.style.background = 'color-mix(in srgb, currentColor 15%, transparent)';
   heading.append(name, mood);
   const text = element(doc, 'div', 'dc-msg-text');
@@ -122,23 +118,39 @@ function bubble(doc, parsed, line, assets, isAlive) {
   quote.style.color = 'var(--bd-accent-color)';
   text.append(body, quote);
   msg.append(avatar, heading, text);
-  assets.resolve(parsed.name, parsed.mood).then(resolved => {
-    if (!isAlive()) return;
-    if (resolved.avatar) {
-      const image = element(doc, 'img');
-      image.alt = parsed.name; image.src = resolved.avatar;
-      avatar.replaceChildren(image);
-    }
-    if (resolved.color) {
-      msg.style.setProperty('--bd-accent-color', resolved.color);
-      msg.style.setProperty('--bd-character-color', resolved.color);
-    }
-  }).catch(error => { if (isAlive()) assets.onError(error); });
-  return msg;
+  let assetRevision = 0;
+  let appliedMoodColor;
+  function updateAssets() {
+    const revision = ++assetRevision;
+    const group = assets.getMood(parsed.mood);
+    const groupId = group?.id || '';
+    const mapped = group ? '1' : '0';
+    const moodColor = group?.color || 'var(--bd-accent-color)';
+    if (msg.dataset.moodGroup !== groupId) msg.dataset.moodGroup = groupId;
+    if (mood.dataset.moodMapped !== mapped) mood.dataset.moodMapped = mapped;
+    if (appliedMoodColor !== moodColor) { mood.style.color = moodColor; appliedMoodColor = moodColor; }
+    assets.resolve(parsed.name, parsed.mood).then(resolved => {
+      if (!isAlive() || revision !== assetRevision) return;
+      if (resolved.avatar) {
+        let image = avatar.querySelector('img');
+        if (!image) {
+          image = element(doc, 'img'); image.alt = parsed.name;
+          image.src = resolved.avatar; avatar.replaceChildren(image);
+        } else if (image.getAttribute('src') !== resolved.avatar) image.src = resolved.avatar;
+      } else if (avatar.firstElementChild !== placeholder) avatar.replaceChildren(placeholder);
+      const accentColor = resolved.color || color;
+      if (msg.style.getPropertyValue('--bd-accent-color') !== accentColor) msg.style.setProperty('--bd-accent-color', accentColor);
+      if (resolved.color) {
+        if (msg.style.getPropertyValue('--bd-character-color') !== resolved.color) msg.style.setProperty('--bd-character-color', resolved.color);
+      } else if (msg.style.getPropertyValue('--bd-character-color')) msg.style.removeProperty('--bd-character-color');
+    }).catch(error => { if (isAlive() && revision === assetRevision) assets.onError(error); });
+  }
+  updateAssets();
+  return { node: msg, updateAssets };
 }
 
 export function applyStyles(root, settings) {
-  root.dataset.bdColorMode = settings.style_textColorMode;
+  if (root.dataset.bdColorMode !== settings.style_textColorMode) root.dataset.bdColorMode = settings.style_textColorMode;
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
   const fonts = key => JSON.stringify(settings[key]) + ',system-ui,sans-serif';
   const size = Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
@@ -165,12 +177,15 @@ export function applyStyles(root, settings) {
     '--bd-message-left': (size + 24) + 'px', '--bd-message-min-height': Math.max(56, size + 4) + 'px',
     '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',
   };
-  for (const [key, value] of Object.entries(css)) root.style.setProperty(key, String(value));
+  for (const [key, value] of Object.entries(css)) {
+    const next = String(value);
+    if (root.style.getPropertyValue(key) !== next) root.style.setProperty(key, next);
+  }
 }
 
 /** Decorate host-formatted DOM; no raw-message regex pass and no code-block iframe. */
 export function decorateMessage(root, assets, { signal, streaming = false } = {}) {
-  if (signal?.aborted) return { dispose() {}, updateStyles() {}, diagnostics: [], count: 0 };
+  if (signal?.aborted) return { dispose() {}, updateStyles() {}, updateAssets() {}, diagnostics: [], count: 0 };
   if (root.classList.contains('bd-content') || root.hasAttribute('data-bd-view')) throw new Error('该消息已经由对话渲染系统接管');
   const doc = root.ownerDocument;
   const diagnostics = [];
@@ -201,10 +216,11 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
     });
     return { original, lines, parsed };
   });
-  if (!count) return { dispose() {}, updateStyles() {}, diagnostics, count };
+  if (!count) return { dispose() {}, updateStyles() {}, updateAssets() {}, diagnostics, count };
   const viewId = 'bd-' + (++nextViewId);
   const patches = [];
   const marked = [];
+  const assetUpdates = [];
   let alive = !signal?.aborted;
   const hadStyle = root.hasAttribute('style');
   const oldColorMode = root.getAttribute('data-bd-color-mode');
@@ -226,7 +242,9 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
       lines.forEach((line, index) => {
         if (parsed[index].kind === 'dialogue') {
           narration = null;
-          segment.append(bubble(doc, parsed[index], line, assets, () => alive));
+          const rendered = bubble(doc, parsed[index], line, assets, () => alive);
+          segment.append(rendered.node);
+          assetUpdates.push(rendered.updateAssets);
         } else if (line.text.trim()) {
           if (!narration) { narration = element(doc, 'div', 'dc-narration-block'); segment.append(narration); }
           const p = element(doc, 'p');
@@ -289,5 +307,14 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
     signal?.removeEventListener('abort', dispose);
   }
   signal?.addEventListener('abort', dispose, { once: true });
-  return { dispose, updateStyles: settings => { if (alive) applyStyles(root, settings); }, diagnostics, count };
+  return {
+    dispose,
+    updateStyles: settings => { if (alive) applyStyles(root, settings); },
+    updateAssets() {
+      if (!alive) return;
+      applyStyles(root, assets.settings);
+      for (const update of assetUpdates) update();
+    },
+    diagnostics, count,
+  };
 }

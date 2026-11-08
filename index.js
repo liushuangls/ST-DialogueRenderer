@@ -1,5 +1,5 @@
 import { getContext } from '../../../extensions.js';
-import { createExtension } from "./src/extension.js?v=2.1.1";
+import { createExtension } from "./src/extension.js?v=2.1.2";
 
 const extension = createExtension({ getContext });
 extension.start();

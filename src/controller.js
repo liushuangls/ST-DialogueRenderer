@@ -1,6 +1,6 @@
-import { decorateMessage } from "./dom-renderer.js?v=2.1.1";
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.1.1";
-import { isDialogueCandidate } from "./protocol.js?v=2.1.1";
+import { decorateMessage } from "./dom-renderer.js?v=2.1.2";
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.1.2";
+import { isDialogueCandidate } from "./protocol.js?v=2.1.2";
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, onDiagnostics = () => {}, chatSurface }) {
@@ -160,7 +160,9 @@ export class DialogueController {
   }
 
   refresh() {
-    for (const id of [...this.active.keys()]) this.release(id);
+    // Resource sync must not collapse the message between frames and lose the
+    // host's reading position. Content changes are handled separately by reconcile.
+    for (const entry of this.active.values()) entry.view.updateAssets();
     this.schedule();
   }
 

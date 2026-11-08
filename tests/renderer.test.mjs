@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.1.1";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.1";
-import { DialogueController } from "../src/controller.js?v=2.1.1";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.1.1";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.1.2";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.2";
+import { DialogueController } from "../src/controller.js?v=2.1.2";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.1.2";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -116,6 +116,50 @@ test('late avatar completion and pre-aborted render cannot mutate a released mes
   const abort = new f.dom.window.AbortController(); abort.abort();
   decorateMessage(content, f.assets, { signal: abort.signal });
   assert.equal(content.innerHTML, before); assert.equal(content.className, 'mes_text');
+  f.dom.window.close();
+});
+
+test('resource refresh updates avatars, mood mapping and colors in place and removes stale values', async () => {
+  const f = fixture(); const content = addMessage(f.document, 0, '@say:Alice|平静|保留正文');
+  f.assets.resolve = async () => ({ avatar: '/first.png', color: '#ff0000' });
+  const view = decorateMessage(content, f.assets); await tick();
+  const bubble = content.querySelector('.dc-msg'); const body = content.querySelector('.dc-msg-text-content');
+  const image = bubble.querySelector('img');
+  view.updateAssets(); await tick();
+  assert.equal(bubble.querySelector('img'), image);
+  f.assets.settings.style_dialogueFontSize = 20;
+  f.assets.getMood = () => ({ id: 'new-group', color: '#0000ff' });
+  f.assets.resolve = async () => ({ avatar: '/second.png', color: null });
+  view.updateAssets(); await tick();
+  assert.equal(content.querySelector('.dc-msg'), bubble);
+  assert.equal(content.querySelector('.dc-msg-text-content'), body);
+  assert.equal(bubble.querySelector('img'), image);
+  assert.equal(image.getAttribute('src'), '/second.png');
+  assert.equal(bubble.dataset.moodGroup, 'new-group');
+  assert.equal(bubble.querySelector('.dc-msg-mood').style.color, 'rgb(0, 0, 255)');
+  assert.equal(bubble.style.getPropertyValue('--bd-character-color'), '');
+  assert.notEqual(bubble.style.getPropertyValue('--bd-accent-color'), '#ff0000');
+  assert.equal(content.style.getPropertyValue('--bd-dialogue-size'), '20px');
+  f.assets.resolve = async () => ({}); f.assets.getMood = () => null;
+  view.updateAssets(); await tick();
+  assert.equal(bubble.querySelector('img'), null);
+  assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'A');
+  assert.equal(bubble.dataset.moodGroup, '');
+  assert.equal(bubble.querySelector('.dc-msg-mood').style.color, 'var(--bd-accent-color)');
+  view.dispose(); f.dom.window.close();
+});
+
+test('an older avatar request cannot overwrite resources applied by a newer refresh', async () => {
+  const f = fixture(); const content = addMessage(f.document, 0, '@say:Alice|平静|正文');
+  const pending = []; f.assets.resolve = () => new Promise(resolve => pending.push(resolve));
+  const view = decorateMessage(content, f.assets);
+  view.updateAssets();
+  pending[1]({ avatar: '/new.png', color: '#0000ff' }); await tick();
+  pending[0]({ avatar: '/old.png', color: '#ff0000' }); await tick();
+  assert.equal(content.querySelector('img').getAttribute('src'), '/new.png');
+  assert.equal(content.querySelector('.dc-msg').style.getPropertyValue('--bd-character-color'), '#0000ff');
+  view.dispose(); view.updateAssets();
+  assert.equal(pending.length, 2);
   f.dom.window.close();
 });
 

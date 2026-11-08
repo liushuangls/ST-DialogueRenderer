@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.1.1";
-import { AvatarDB } from "../src/storage.js?v=2.1.1";
-import { buildColorConfigKey } from "../src/context.js?v=2.1.1";
+import { createExtension } from "../src/extension.js?v=2.1.2";
+import { AvatarDB } from "../src/storage.js?v=2.1.2";
+import { buildColorConfigKey } from "../src/context.js?v=2.1.2";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -86,6 +86,39 @@ try {
   check(newest.querySelectorAll('.dc-msg,.bd-narration,[data-bd-owned],[data-bd-narration]').length === 0, 'copied projection survived disabling');
   check(newest.querySelector('iframe') === externalFrame, 'disabling replaced a foreign iframe');
   passes.push('PASS HTML 整段重写后头像保持 52px、姓名布局正常；关闭时恢复原文并保留 iframe');
+  const chatElement = document.getElementById('chat');
+  const chatStyle = chatElement.getAttribute('style');
+  const avatarSize = app.assets.settings.style_avatarSize;
+  chatElement.replaceChildren(); context.chat.length = 0;
+  chatElement.style.cssText = 'height:320px;overflow-y:auto;scroll-behavior:auto';
+  await db.setConfig('style_avatarSize', 100); await app.assets.refresh();
+  const longReply = addMessage(Array.from({ length: 20 }, (_, i) => '@say:测试用户|平静|长回复中的第 ' + (i + 1) + ' 段对话。').join('\n'));
+  await app.setSettings({ enabled: true }); await tick();
+  chatElement.scrollTop = (chatElement.scrollHeight - chatElement.clientHeight) * 0.6;
+  await tick();
+  const readingTop = chatElement.scrollTop;
+  const readingHeight = chatElement.scrollHeight;
+  const readingBubble = longReply.querySelectorAll('.dc-msg')[12];
+  const readingOffset = readingBubble.getBoundingClientRect().top;
+  check(readingTop > 300, 'long reply must provide a real reading position');
+  for (let i = 0; i < 3; i++) {
+    // Foreground/online handlers call this after synchronizing resources.
+    const heights = [];
+    const geometryObserver = new MutationObserver(() => heights.push(chatElement.scrollHeight));
+    geometryObserver.observe(longReply, { childList: true, attributes: true, subtree: true });
+    await app.refresh();
+    check(chatElement.scrollHeight === readingHeight, 'resource refresh transiently collapsed the chat');
+    await tick();
+    geometryObserver.disconnect();
+    check(heights.every(height => height === readingHeight), 'a DOM observer saw the chat collapse during refresh');
+    check(Math.abs(chatElement.scrollTop - readingTop) <= 1, 'resource refresh moved the reading position');
+    check(longReply.querySelectorAll('.dc-msg')[12] === readingBubble, 'resource refresh replaced the reading anchor');
+    check(Math.abs(readingBubble.getBoundingClientRect().top - readingOffset) <= 1, 'resource refresh shifted the reading anchor');
+  }
+  passes.push('PASS 返回前台的资源刷新保持长消息滚动高度、正文节点和阅读位置');
+  await app.setSettings({ enabled: false });
+  if (chatStyle === null) chatElement.removeAttribute('style'); else chatElement.setAttribute('style', chatStyle);
+  await db.setConfig('style_avatarSize', avatarSize); await app.assets.refresh();
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
   addMessage(raw);
   await app.setSettings({ enabled: true, recentAiCount: 3 }); await tick();

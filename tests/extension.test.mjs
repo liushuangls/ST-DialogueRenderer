@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.1.1";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.1";
-import { createExtension } from "../src/extension.js?v=2.1.1";
+import { AvatarDB } from "../src/storage.js?v=2.1.2";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.2";
+import { createExtension } from "../src/extension.js?v=2.1.2";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.1.2";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
-async function fixture() {
+async function fixture({ syncEnabled = false } = {}) {
   const dom = new JSDOM('<div id="extensions_settings2"></div><div id="chat"><div class="mes" mesid="0"><div class="mes_text"><p>@say:A|平静|已经经过显示正则的内容</p></div></div></div>',
     { pretendToBeVisual: true, url: 'https://test.example/' });
   Object.assign(globalThis, { window: dom.window, document: dom.window.document,
@@ -27,7 +28,7 @@ async function fixture() {
   };
   dom.window.SillyTavern = { getContext: () => context };
   const db = new AvatarDB();
-  const app = createExtension({ getContext: () => context, document: dom.window.document, db, syncEnabled: false });
+  const app = createExtension({ getContext: () => context, document: dom.window.document, db, syncEnabled });
   app.start(); for (const callback of events.get('ready')) await callback(); await tick();
   return { dom, db, app, context, events, prompts, get saves() { return saves; },
     async close() { await app.dispose(); dom.window.close(); } };
@@ -57,6 +58,38 @@ test('extension toggles generated prompt and rendering together while preserving
     assert.equal([...f.events.values()].reduce((sum, callbacks) => sum + callbacks.size, 0), 0);
     f.dom.window.close();
   }
+});
+
+test('returning to the foreground or reconnecting syncs resources without rebuilding messages', async t => {
+  let syncs = 0;
+  t.mock.method(AvatarSync.prototype, 'refreshCurrentScope', async () => { syncs++; });
+  t.mock.method(GlobalStyleSync.prototype, 'refresh', async () => {});
+  const f = await fixture({ syncEnabled: true });
+  try {
+    const doc = f.dom.window.document;
+    const content = doc.querySelector('.mes_text');
+    const bubble = content.querySelector('.dc-msg');
+    const body = content.querySelector('.dc-msg-text-content');
+    const changes = [];
+    const observer = new f.dom.window.MutationObserver(records => changes.push(...records));
+    observer.observe(content, { childList: true, attributes: true, subtree: true });
+    const initialSyncs = syncs;
+    for (let i = 0; i < 3; i++) {
+      Object.defineProperty(doc, 'visibilityState', { configurable: true, value: 'hidden' });
+      doc.dispatchEvent(new f.dom.window.Event('visibilitychange')); await tick();
+      assert.equal(syncs, initialSyncs + i);
+      Object.defineProperty(doc, 'visibilityState', { configurable: true, value: 'visible' });
+      doc.dispatchEvent(new f.dom.window.Event('visibilitychange')); await tick();
+      assert.equal(content.querySelector('.dc-msg'), bubble);
+      assert.equal(content.querySelector('.dc-msg-text-content'), body);
+      assert.equal(content.classList.contains('bd-content'), true);
+    }
+    f.dom.window.dispatchEvent(new f.dom.window.Event('online')); await tick();
+    assert.equal(syncs, initialSyncs + 4);
+    assert.equal(content.querySelector('.dc-msg'), bubble);
+    assert.equal(changes.length, 0, 'unchanged resources must not mutate the chat DOM');
+    observer.disconnect();
+  } finally { await f.close(); }
 });
 
 test('closing unsaved preview restores saved styles without refreshing fonts for size changes', async () => {
