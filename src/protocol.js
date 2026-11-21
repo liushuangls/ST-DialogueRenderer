@@ -1,4 +1,4 @@
-import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "./config.js?v=2.1.2";
+import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "./config.js?v=2.1.3";
 
 export const PROTOCOL_VERSION = 2;
 export const DIALOGUE_TYPES = Object.freeze({ say: '角色直接说出口的话', think: '角色未说出口的想法' });
@@ -44,7 +44,7 @@ export function buildDefaultPrompt() {
 叙述、动作和环境直接写普通段落。
 ${examples}
 每条独占一行，行头和前两个 | 是固定分隔符，后面全部是正文。不加外层方括号，不用星号区分类型。
-姓名使用稳定一致的称呼；只有用户角色的名字填 {{user}}，其他角色填各自姓名。未知人物用能稳定区分的称呼。
+台词署说话者的名字，心声署思考者的名字。用户角色用当前用户设定中的名字，未具名人物用文中称呼（如守门弟子）。同一人前后称呼一致，姓名栏只写实际称呼，勿照抄占位符。
 情绪不能为空，按语境使用简短自然的描述。可参考：${references}，也可使用更合适的描述。
 示例：
 她放下杯子，轻轻点头。

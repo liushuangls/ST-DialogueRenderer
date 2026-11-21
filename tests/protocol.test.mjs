@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDialogueLine, buildDefaultPrompt, buildInjectionPrompt } from "../src/protocol.js?v=2.1.2";
-import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "../src/config.js?v=2.1.2";
+import { parseDialogueLine, buildDefaultPrompt, buildInjectionPrompt } from "../src/protocol.js?v=2.1.3";
+import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "../src/config.js?v=2.1.3";
 
 test('explicit types use only two separators and preserve body offsets, punctuation and Markdown', () => {
   const line = '  @say: Alice | 平静 |  _请按 [Enter]_ 或选择 A | B。  ';
@@ -33,7 +33,7 @@ test('generated prompt is concise and carries one reference per mood without dic
   const prompt = buildDefaultPrompt();
   assert.ok(prompt.length < 600);
   assert.match(prompt, /不改变叙事视角/);
-  assert.match(prompt, /只有用户角色的名字填 \{\{user\}\}/);
+  assert.doesNotMatch(prompt, /\{\{(?:user|char)\}\}/i);
   assert.match(prompt, /也可使用更合适的描述/);
   assert.doesNotMatch(prompt, /now_plot|<content>|@bubble|最高优先级|Markdown 只负责|代码围栏|完整 HTML/);
   for (const group of DEFAULT_MOOD_GROUPS) assert.ok(prompt.includes(group.words[0]));
