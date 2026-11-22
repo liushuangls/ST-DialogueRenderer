@@ -1,13 +1,13 @@
-import { SOURCE_STORE, PORTRAIT_STORES, contentId, syncedImagePath, sourceIdFromUrl, requestResult, writeTransaction, dropPortraitSource, pruneUnusedSource } from "./portrait-sources.js?v=2.5.0";
-import { builtinPortraitByFile, builtinPortraitUrl } from "./avatar-pool.js?v=2.5.0";
-import { readingSettings, STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.5.0";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.5.0";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.5.0";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.5.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.0";
-import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.5.0";
+import { SOURCE_STORE, PORTRAIT_STORES, contentId, syncedImagePath, sourceIdFromUrl, requestResult, writeTransaction, dropPortraitSource, pruneUnusedSource } from "./portrait-sources.js?v=2.5.1";
+import { builtinPortraitByFile, builtinPortraitUrl } from "./avatar-pool.js?v=2.5.1";
+import { readingSettings, STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.5.1";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.5.1";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.5.1";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.5.1";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.1";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.5.1";
 
-import { POOL_LAYOUT_KEY, poolSettingNewer, validatePoolSetting } from "./pool-groups.js?v=2.5.0";
+import { POOL_LAYOUT_KEY, poolSettingNewer, validatePoolSetting } from "./pool-groups.js?v=2.5.1";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 2;

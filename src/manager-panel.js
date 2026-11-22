@@ -1,11 +1,11 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.5.0";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.5.0";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.5.0";
-import { STORE_AVATARS } from "./storage.js?v=2.5.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.0";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.5.0";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.5.1";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.5.1";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.5.1";
+import { STORE_AVATARS } from "./storage.js?v=2.5.1";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.1";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.5.1";
 
-import { bindPoolPicker } from "./pool-picker.js?v=2.5.0";
+import { bindPoolPicker } from "./pool-picker.js?v=2.5.1";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -1012,10 +1012,13 @@ class AvatarManagerPanel {
       <div style="color:#666; font-size:11px; margin-top:2px;">${sourceInfo} ${sizeKB} KB · ${avatar.mimeType.split('/')[1].toUpperCase()}</div>
     </div>
     <div style="display:flex; gap:4px; flex-shrink:0;">
-      <button type="button" class="bam-action-btn bam-btn-pool" data-name="${safeName}" title="从头像池选择" aria-label="为${safeName}从头像池选择">选图</button>
-      <button class="bam-action-btn bam-btn-color" data-name="${safeName}" title="修改颜色" style="
-        background:rgba(255,255,255,0.06); border:none; color:#888;
-        width:28px; height:28px; border-radius:6px; cursor:pointer; font-size:13px;">&#x1F3A8;</button>
+      <button type="button" class="bam-action-btn bam-btn-pool" data-name="${safeName}" title="从头像池选择" aria-label="为${safeName}从头像池选择">
+        <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="3"/>
+          <circle cx="8.5" cy="9" r="1.5" fill="currentColor" stroke="none"/>
+          <path d="m4 17 5-5 4 4 3-3 5 5"/>
+        </svg>
+      </button>
       <button class="bam-action-btn bam-btn-replace" data-name="${safeName}" title="替换图片" style="
         background:rgba(255,255,255,0.06); border:none; color:#888;
         width:28px; height:28px; border-radius:6px; cursor:pointer; font-size:13px;">&#x21BB;</button>
@@ -1204,7 +1207,6 @@ class AvatarManagerPanel {
       else if (btn.classList.contains('bam-btn-rename')) this._handleRename(name);
       else if (btn.classList.contains('bam-btn-pool')) openPool(name);
       else if (btn.classList.contains('bam-btn-replace')) this._handleReplace(name);
-      else if (btn.classList.contains('bam-btn-color')) this._handleChangeColor(name);
       else if (btn.classList.contains('bam-btn-mood-toggle')) this._handleMoodToggle(name);
     });
 
@@ -1364,20 +1366,6 @@ class AvatarManagerPanel {
       this._requestAvatarAssetPreviewRefresh();
     }
     catch (err) { alert('删除失败: ' + err.message); }
-  }
-
-  async _handleChangeColor(name) {
-    const charId = this._getActiveCharId();
-    const currentColor = await this.db.getConfig(buildColorConfigKey(charId, name), '#58a6ff');
-    this._openMobileColorDialog({
-      title: `角色主题色 · ${name}`,
-      initialValue: currentColor || '#58a6ff',
-      onConfirm: async (nextColor) => {
-        await this.db.setConfig(buildColorConfigKey(charId, name), nextColor);
-        await this._refreshList();
-        this._requestAvatarAssetPreviewRefresh();
-      }
-    });
   }
 
   async _handleRename(name) {

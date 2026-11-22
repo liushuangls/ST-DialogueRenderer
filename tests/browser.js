@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.5.0";
-import { AvatarDB } from "../src/storage.js?v=2.5.0";
-import { buildColorConfigKey } from "../src/context.js?v=2.5.0";
+import { createExtension } from "../src/extension.js?v=2.5.1";
+import { AvatarDB } from "../src/storage.js?v=2.5.1";
+import { buildColorConfigKey } from "../src/context.js?v=2.5.1";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -239,7 +239,10 @@ try {
   document.getElementById('bam-alias-input').value = '茶馆老板娘';
   document.getElementById('bam-btn-confirm-upload').click();
   await until(() => document.querySelector('.bam-avatar-item[data-name="茶馆老板娘"]'));
-  poolPicker.open = true; await tick();
+  const rowPicker = document.querySelector('.bam-avatar-item[data-name="茶馆老板娘"] .bam-btn-pool');
+  check(rowPicker.getAttribute('aria-label').includes('茶馆老板娘') && !rowPicker.textContent.trim(), 'avatar pool icon label');
+  rowPicker.querySelector('svg').dispatchEvent(new MouseEvent('click', {bubbles:true}));
+  await until(() => poolPicker.open); await tick();
   poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
   const editor = poolPicker.querySelector('.bam-group-editor');
   editor.querySelector('input').value = '我的画集';
