@@ -1,12 +1,11 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.5";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.5";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.6";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.6";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
 const STYLE_PROTECTED = PROTECTED_VIEWS + ',script,style,custom-style,textarea,button,audio,video';
 const PROTECTED_BLOCKS = STYLE_PROTECTED + ',table';
 const PROTECTED = PROTECTED_BLOCKS + ',code';
-const COLORS = ['#f47b67', '#45ddc0', '#e78bff', '#f0b232', '#58a6ff', '#ff9a76', '#7ee787', '#d2a8ff'];
 let nextViewId = 0;
 
 function element(doc, tag, className, text) {
@@ -84,59 +83,50 @@ function candidates(root) {
   return result;
 }
 
-function renderName(doc, name) {
-  const holder = element(doc, 'span', 'dc-msg-name');
-  [...name].forEach((letter, index) => {
-    const span = element(doc, 'span', index === 0 ? 'dc-ch' : index === 2 ? 'dc-cs' : 'dc-cn', letter);
-    holder.append(span);
-  });
-  return holder;
+export function createDialogueRow(doc, name, type, content) {
+  const thought = type === 'think';
+  const msg = element(doc, 'div', 'dc-msg');
+  msg.dataset.name = name.toLowerCase();
+  msg.dataset.thought = thought ? '1' : '0';
+  const speaker = element(doc, 'div', 'dc-msg-speaker');
+  const avatar = element(doc, 'div', 'dc-msg-avatar');
+  avatar.setAttribute('aria-hidden', 'true');
+  const placeholder = element(doc, 'span', 'dc-msg-avatar-ph', name);
+  const letters = [...name.replace(/\s/g, '')].length;
+  if (letters >= 3) placeholder.classList.add(letters >= 5 ? 'dc-avatar-xs' : 'dc-avatar-small');
+  avatar.append(placeholder);
+  speaker.append(element(doc, 'span', 'dc-msg-name', name), avatar);
+  const text = element(doc, 'div', 'dc-msg-text');
+  const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
+  body.append(content);
+  const alreadyQuoted = /^「[\s\S]*」$/.test(body.textContent.trim());
+  if (thought || alreadyQuoted) text.append(body);
+  else text.append('「', body, '」');
+  msg.append(speaker, text);
+  return { node: msg, avatar, placeholder };
 }
 
 function bubble(doc, parsed, line, assets, isAlive) {
-  const nameKey = parsed.name.toLowerCase();
-  const hash = [...nameKey].reduce((sum, char) => ((sum * 31) + char.codePointAt(0)) >>> 0, 0);
-  const color = COLORS[hash % COLORS.length];
   const range = rangeFor(doc, line, parsed.start, parsed.end);
-  const thought = parsed.type === 'think';
-  const msg = element(doc, 'div', 'dc-msg');
-  msg.style.setProperty('--bd-accent-color', color);
-  msg.dataset.name = nameKey;
-  msg.dataset.thought = thought ? '1' : '0';
-  const avatar = element(doc, 'div', 'dc-msg-avatar');
-  const placeholder = element(doc, 'div', 'dc-msg-avatar-ph', [...parsed.name][0]);
-  placeholder.style.background = 'var(--bd-accent-color)';
-  avatar.append(placeholder);
-  const heading = element(doc, 'div', 'dc-msg-header');
-  const name = renderName(doc, parsed.name);
-  const mood = element(doc, 'span', 'dc-msg-mood', parsed.mood);
-  heading.append(name, mood);
-  const text = element(doc, 'div', 'dc-msg-text');
-  const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
-  body.append(range ? cloneInline(range) : doc.createTextNode(parsed.text));
-  const quote = element(doc, 'span', 'dc-msg-quote' + (thought ? ' dc-msg-quote-thought' : ''), thought ? '＊' : '”');
-  text.append(body, quote);
-  msg.append(avatar, heading, text);
+  const { node: msg, avatar, placeholder } = createDialogueRow(doc, parsed.name, parsed.type, range ? cloneInline(range) : parsed.text);
   let assetRevision = 0;
   function updateAssets() {
     const revision = ++assetRevision;
     const group = assets.getMood(parsed.mood);
     const groupId = group?.id || '';
-    const mapped = group ? '1' : '0';
     if (msg.dataset.moodGroup !== groupId) msg.dataset.moodGroup = groupId;
-    if (mood.dataset.moodMapped !== mapped) mood.dataset.moodMapped = mapped;
     assets.resolve(parsed.name, parsed.mood).then(resolved => {
       if (!isAlive() || revision !== assetRevision) return;
       if (resolved.avatar) {
         let image = avatar.querySelector('img');
         if (!image) {
-          image = element(doc, 'img'); image.alt = parsed.name;
+          image = element(doc, 'img'); image.alt = '';
+          image.addEventListener('error', () => {
+            if (isAlive() && image.parentNode === avatar) avatar.replaceChildren(placeholder);
+          }, { once: true });
           image.src = resolved.avatar; avatar.replaceChildren(image);
         } else if (image.getAttribute('src') !== resolved.avatar) image.src = resolved.avatar;
       } else if (avatar.firstElementChild !== placeholder) avatar.replaceChildren(placeholder);
-      const accentColor = resolved.color || color;
-      if (msg.style.getPropertyValue('--bd-accent-color') !== accentColor) msg.style.setProperty('--bd-accent-color', accentColor);
-
     }).catch(error => { if (isAlive() && revision === assetRevision) assets.onError(error); });
   }
   updateAssets();
@@ -149,14 +139,14 @@ export function applyStyles(root, settings) {
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
   const palette = READING_PALETTES[mode];
   const fonts = key => READING_FONTS[settings[key]]?.stack ?? (JSON.stringify(settings[key]) + ',system-ui,sans-serif');
-  const size = settings.style_avatarSize < 0 ? 52 : Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
+  const size = settings.style_avatarSize < 0 ? 'var(--bd-auto-avatar)' : Math.min(120, Math.max(36, Number(settings.style_avatarSize))) + 'px';
   const radius = settings.style_avatarShape === 'circle' ? '50%' : settings.style_avatarShape === 'square' ? '0px' : '8px';
   const css = {
     '--bd-color': palette.ink,
     '--bd-paper': palette.paper,
     '--bd-narration-color': palette.narration,
     '--bd-speech-color': palette.speech,
-    '--bd-mood-background': palette.moodBackground,
+    '--bd-bubble-border': palette.bubbleBorder,
     '--bd-name-color': palette.name,
     '--bd-narration-size': px('style_narrationFontSize', '17px'),
     '--bd-dialogue-size': px('style_dialogueFontSize', '15px'),
@@ -174,8 +164,7 @@ export function applyStyles(root, settings) {
     '--bd-narration-radius': px('style_narrationBorderRadius', '0px'),
     '--bd-indent': Number(settings.style_narrationTextIndent) + 'em',
 
-    '--bd-avatar-size': size + 'px', '--bd-avatar-radius': radius,
-    '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',
+    '--bd-avatar-size': size, '--bd-avatar-radius': radius,
   };
   for (const [key, value] of Object.entries(css)) {
     const next = String(value);

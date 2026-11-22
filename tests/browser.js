@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.5";
-import { AvatarDB } from "../src/storage.js?v=2.2.5";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.5";
+import { createExtension } from "../src/extension.js?v=2.2.6";
+import { AvatarDB } from "../src/storage.js?v=2.2.6";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.6";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -52,7 +52,7 @@ try {
   check(document.querySelectorAll('iframe').length === 0, 'bubble renderer should not create iframes');
   check(document.querySelector('.dc-msg-text-content strong').textContent.includes('显示正则已生效'), 'renderer ignored the display regex result');
   const thought = document.querySelector('[data-thought="1"]');
-  check(thought.querySelector('.dc-msg-mood').textContent === '欲言又止', 'free thought mood lost');
+  check(!thought.textContent.includes('欲言又止') && !thought.querySelector('.dc-msg-mood'), 'mood appeared in the conversation');
   check(thought.querySelector('img'), 'base avatar missing');
   check(thought.querySelector('img').src !== document.querySelector('[data-mood-group="mood-calm"] img').src, 'mood avatar not distinguished');
   for (const node of document.querySelectorAll('h1.bd-narration,blockquote.bd-narration,.dc-msg-text')) {
@@ -79,9 +79,9 @@ try {
   await tick();
   const avatar = newest.querySelector('.dc-msg-avatar');
   check(newest.classList.contains('bd-content'), 'HTML rewrite lost the style owner');
-  check(getComputedStyle(avatar).position === 'absolute', 'copied avatar lost its layout');
-  check(avatar.getBoundingClientRect().width === 52, 'copied avatar lost its default size');
-  check(getComputedStyle(newest.querySelector('.dc-msg-header')).display === 'flex', 'copied dialogue header lost its layout');
+  const narrow = matchMedia('(max-width:480px)').matches;
+  check(avatar.getBoundingClientRect().width === (narrow ? 40 : 48), 'copied avatar lost its default size');
+  check(getComputedStyle(newest.querySelector('.dc-msg-speaker')).display === 'flex', 'copied dialogue header lost its layout');
   check(newest.querySelector('iframe') === externalFrame, 'foreign iframe was replaced');
   await app.setSettings({ enabled: false });
   check(newest.querySelectorAll('.dc-msg,.bd-narration,[data-bd-owned],[data-bd-narration]').length === 0, 'copied projection survived disabling');
@@ -121,7 +121,7 @@ try {
   if (chatStyle === null) chatElement.removeAttribute('style'); else chatElement.setAttribute('style', chatStyle);
   await db.setConfig('style_avatarSize', avatarSize); await app.assets.refresh();
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
-  const story = addMessage(raw);
+  const story = addMessage(raw + '\n\n@say:茶馆老板娘|温和|「' + '天色已经放晴了。'.repeat(18) + '」');
   story.insertAdjacentHTML('afterbegin',
     '<div class="TH-render"><details open><summary>吾乃小猫之神…</summary><p>@think:示例|平静|思考过程</p></details><iframe title="思考栏"></iframe></div>');
   const reasoning = story.querySelector('.TH-render');
@@ -133,8 +133,8 @@ try {
   const manager = await app.openManager();
   check(document.getElementById('bam-panel'), 'avatar settings panel did not open');
   await manager._switchTab('style');
-  const text = document.querySelector('.dc-msg-text');
-  const bubbleNode = document.querySelector('.dc-msg');
+  const text = story.querySelector('.dc-msg-text');
+  const bubbleNode = story.querySelector('.dc-msg');
   const readingRoot = text.closest('.bd-content');
   const paragraph = readingRoot.querySelector('.dc-narration-block p');
   const name = bubbleNode.querySelector('.dc-msg-name');
@@ -145,11 +145,23 @@ try {
   }
   check(getComputedStyle(paragraph).textIndent === '34px' && getComputedStyle(paragraph).textAlign === 'justify', 'narration alignment');
   check(getComputedStyle(paragraph.parentElement).paddingLeft === (matchMedia('(max-width:480px)').matches ? '12px' : '20px'), 'page inset');
-  check(getComputedStyle(name).fontSize === '16px' && getComputedStyle(name).fontWeight === '800' && getComputedStyle(name.querySelector('.dc-ch')).fontSize === '22px', 'speaker name layout');
-  check(getComputedStyle(bubbleNode).paddingLeft === '76px' && getComputedStyle(bubbleNode).marginTop === '28px', 'dialogue layout after narration');
-  check(getComputedStyle(bubbleNode.nextElementSibling).marginTop === '10px', 'spacing between consecutive dialogue rows');
+  check(getComputedStyle(name).fontSize === '11px' && getComputedStyle(name).fontWeight === '400' && getComputedStyle(name).lineHeight === '13.75px', 'speaker name metrics');
+  check(getComputedStyle(bubbleNode).marginTop === '14px' && getComputedStyle(bubbleNode).marginBottom === '16px', 'dialogue spacing');
+  for (const row of story.querySelectorAll('.dc-msg')) {
+    const bounds = selector => row.querySelector(selector).getBoundingClientRect();
+    const nameRect = bounds('.dc-msg-name');
+    const avatarRect = bounds('.dc-msg-avatar');
+    const speakerRect = bounds('.dc-msg-speaker');
+    const bubbleRect = bounds('.dc-msg-text');
+    check(Math.abs(avatarRect.top - nameRect.bottom - 3) < 1, 'name must sit above the avatar');
+    check(Math.abs(avatarRect.bottom - bubbleRect.bottom) < 1, 'avatar must align with the bottom of short and wrapped bubbles');
+    check(Math.abs(bubbleRect.left - speakerRect.right - (narrow ? 7 : 9)) < 1, 'speaker-to-bubble gap');
+    check(bubbleRect.right <= row.getBoundingClientRect().right, 'bubble overflowed the row');
+  }
+  const longSpeech = story.querySelector('.dc-msg:last-child .dc-avatar-xs').closest('.dc-msg').querySelector('.dc-msg-text');
+  check(longSpeech.offsetHeight > (narrow ? 40 : 48) && !longSpeech.textContent.startsWith('「「'), 'long quoted dialogue');
   const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
-  for (const [mode, paper, speech, narration, moodBackground] of [
+  for (const [mode, paper, speech, narration, border] of [
     ['light','rgb(250, 249, 245)','rgb(45, 43, 39)','rgb(83, 80, 75)','rgba(83, 80, 75, 0.26)'],
     ['dark','rgb(44, 44, 44)','rgb(239, 237, 232)','rgb(207, 203, 196)','rgba(207, 203, 196, 0.26)'],
     ['parchment','rgb(239, 226, 196)','rgb(66, 50, 31)','rgb(99, 80, 58)','rgba(99, 80, 58, 0.3)'],
@@ -161,18 +173,16 @@ try {
     for (const surface of readingRoot.querySelectorAll('[data-bd-owned],[data-bd-narration]')) {
       check(getComputedStyle(surface).backgroundColor === paper, 'story paper color: ' + mode);
     }
-    for (const item of [...readingRoot.querySelectorAll('.dc-msg-text'), document.querySelector('.bam-sample-line')]) {
+    for (const item of [...readingRoot.querySelectorAll('.dc-msg-text'), document.querySelector('#bam-reading-sample .dc-msg-text')]) {
       const style = getComputedStyle(item);
-      check(style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.borderWidth === '0px' && style.padding === '0px' && style.boxShadow === 'none', 'dialogue frame: ' + mode);
+      check(style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.border === '1px solid ' + border && style.borderRadius === '10px' && style.padding === '6px 11px' && style.boxShadow === 'none', 'dialogue frame: ' + mode);
     }
-    const moodStyle = getComputedStyle(bubbleNode.querySelector('.dc-msg-mood'));
-    check(moodStyle.color === narration && moodStyle.backgroundColor === moodBackground && moodStyle.borderWidth === '0px', 'mood palette: ' + mode);
     check(getComputedStyle(text).color === speech, 'speech color: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
-    check(getComputedStyle(bubbleNode.querySelector('.dc-ch')).color === nameColor, 'name color: ' + mode);
-    check(getComputedStyle(bubbleNode.querySelector('.dc-msg-quote')).color === speech, 'quote color: ' + mode);
+    check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
+    check(text.textContent.startsWith('「') && text.textContent.endsWith('」'), 'speech punctuation');
     check(getComputedStyle(readingRoot.querySelector('.dc-narration-block')).color === narration, 'narration color: ' + mode);
-    check(document.querySelector('.dc-msg') === bubbleNode, 'palette change rebuilt bubbles');
+    check(story.querySelector('.dc-msg') === bubbleNode, 'palette change rebuilt bubbles');
     check(getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width === originalAvatarSize, 'palette resized the avatar');
   }
   document.querySelector('input[name="bam-reading-font"][value="system-ui"]').click(); await tick();
@@ -182,7 +192,7 @@ try {
   check(getComputedStyle(paragraph).fontSize === '20px' && getComputedStyle(text).fontSize === '18px', 'font size preview');
   manager.close(); await tick();
   check(getComputedStyle(text).fontSize === '15px', 'closing did not roll back unsaved size');
-  passes.push('PASS 三套配色下台词与心声均无外框，情绪标签随纸色切换，思考栏沿用原色');
+  passes.push('PASS 三套配色使用透明轻气泡和淡描边；长短台词左侧署名与头像底部对齐，思考栏沿用原色');
   await app.openManager(); await manager._switchTab('mood');
   const promptEditor = document.getElementById('bam-prompt-template');
   check(!promptEditor.readOnly && promptEditor.value.includes('@say:'), 'editable prompt unavailable');

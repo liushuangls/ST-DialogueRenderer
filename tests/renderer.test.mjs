@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.2.5";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.5";
-import { DialogueController } from "../src/controller.js?v=2.2.5";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.5";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.2.6";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.6";
+import { DialogueController } from "../src/controller.js?v=2.2.6";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.6";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -43,7 +43,8 @@ test('explicit speech/thought types preserve rich text, avatars and exact DOM re
   assert.equal(content.querySelector('[data-thought="1"] .dc-msg-text-content').textContent, '未说出口的话');
   assert.equal(content.querySelector('[data-mood-group="mood-calm"] img').src, 'https://example.test/calm.png');
   assert.equal(content.querySelector('[data-mood-group=""] img').src, 'https://example.test/base.png');
-  assert.equal(content.querySelector('[data-mood-group=""] .dc-msg-mood').textContent, '欲言又止');
+  assert.doesNotMatch(content.textContent, /欲言又止|平静/);
+  assert.equal(content.querySelector('[data-thought="0"] .dc-msg-text').textContent, '「说出口的话」');
   assert.ok(content.querySelector('h1').classList.contains('bd-narration'));
   assert.equal(content.querySelectorAll('iframe').length, 0);
   view.dispose();
@@ -106,7 +107,7 @@ test('legacy text colors select a light or dark fixed palette, including charact
   view.updateStyles({ ...STYLE_DEFAULTS, style_textColorMode: 'global', style_globalTextColor: '#113311' });
   assert.equal(content.dataset.bdColorMode, 'light');
   assert.equal(content.style.getPropertyValue('--bd-speech-color'), '#2D2B27');
-  assert.equal(content.querySelector('.dc-ch').style.color, '');
+  assert.equal(content.querySelector('.dc-msg-name').style.color, '');
   view.dispose(); f.dom.window.close();
 });
 
@@ -122,7 +123,7 @@ test('late avatar completion and pre-aborted render cannot mutate a released mes
   f.dom.window.close();
 });
 
-test('resource refresh updates avatars, mood mapping and colors in place and removes stale values', async () => {
+test('resource refresh updates avatars and mood mapping in place and removes stale values', async () => {
   const f = fixture(); const content = addMessage(f.document, 0, '@say:Alice|平静|保留正文');
   f.assets.resolve = async () => ({ avatar: '/first.png', color: '#ff0000' });
   const view = decorateMessage(content, f.assets); await tick();
@@ -139,15 +140,13 @@ test('resource refresh updates avatars, mood mapping and colors in place and rem
   assert.equal(bubble.querySelector('img'), image);
   assert.equal(image.getAttribute('src'), '/second.png');
   assert.equal(bubble.dataset.moodGroup, 'new-group');
-  assert.equal(bubble.querySelector('.dc-msg-mood').dataset.moodMapped, '1');
-  assert.notEqual(bubble.style.getPropertyValue('--bd-accent-color'), '#ff0000');
   assert.equal(content.style.getPropertyValue('--bd-dialogue-size'), '20px');
   f.assets.resolve = async () => ({}); f.assets.getMood = () => null;
   view.updateAssets(); await tick();
   assert.equal(bubble.querySelector('img'), null);
-  assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'A');
+  assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'Alice');
   assert.equal(bubble.dataset.moodGroup, '');
-  assert.equal(bubble.querySelector('.dc-msg-mood').dataset.moodMapped, '0');
+  assert.doesNotMatch(bubble.textContent, /平静/);
   view.dispose(); f.dom.window.close();
 });
 
@@ -159,7 +158,8 @@ test('an older avatar request cannot overwrite resources applied by a newer refr
   pending[1]({ avatar: '/new.png', color: '#0000ff' }); await tick();
   pending[0]({ avatar: '/old.png', color: '#ff0000' }); await tick();
   assert.equal(content.querySelector('img').getAttribute('src'), '/new.png');
-  assert.equal(content.querySelector('.dc-msg').style.getPropertyValue('--bd-accent-color'), '#0000ff');
+  content.querySelector('img').dispatchEvent(new f.dom.window.Event('error'));
+  assert.equal(content.querySelector('.dc-msg-avatar-ph').textContent, 'Alice');
   view.dispose(); view.updateAssets();
   assert.equal(pending.length, 2);
   f.dom.window.close();
@@ -237,7 +237,7 @@ test('rewriting message HTML preserves dialogue styling and can still restore co
     assert.equal(content.classList.contains('bd-content'), true);
     assert.equal(content.querySelectorAll('.dc-msg').length, 2);
     assert.equal(content.querySelectorAll('.dc-msg .dc-msg').length, 0);
-    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), '52px');
+    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), 'var(--bd-auto-avatar)');
     assert.equal(content.querySelector('strong').textContent, '说出口的话');
     assert.equal(content.querySelector('iframe'), iframe);
     const rendered = content.innerHTML; await tick();

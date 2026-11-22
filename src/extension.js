@@ -1,10 +1,10 @@
-import { AvatarDB } from "./storage.js?v=2.2.5";
-import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.2.5";
-import { configureContext } from "./context.js?v=2.2.5";
-import { buildInjectionPrompt } from "./protocol.js?v=2.2.5";
-import { RenderAssets } from "./assets.js?v=2.2.5";
-import { DialogueController } from "./controller.js?v=2.2.5";
-import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.2.5";
+import { AvatarDB } from "./storage.js?v=2.2.6";
+import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.2.6";
+import { configureContext } from "./context.js?v=2.2.6";
+import { buildInjectionPrompt } from "./protocol.js?v=2.2.6";
+import { RenderAssets } from "./assets.js?v=2.2.6";
+import { DialogueController } from "./controller.js?v=2.2.6";
+import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.2.6";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 
@@ -88,7 +88,7 @@ export function createExtension({ getContext, document = globalThis.document,
     await ready;
     if (disposed) throw new Error('对话渲染扩展已关闭');
     if (!panelPromise) {
-      panelPromise = import("./manager-panel.js?v=2.2.5").then(({ AvatarManagerPanel }) => {
+      panelPromise = import("./manager-panel.js?v=2.2.6").then(({ AvatarManagerPanel }) => {
         if (disposed) throw new Error('对话渲染扩展已关闭');
         panel = new AvatarManagerPanel(db, avatarSync, styleSync, { document,
           onPreview: previewStyles, onClose: () => previewStyles(null), onRefresh: refresh,
@@ -134,7 +134,7 @@ export function createExtension({ getContext, document = globalThis.document,
         <div class="bd-switch-card">
           <div class="bd-switch-copy">
             <span class="bd-switch-title" id="bd-enabled-title">启用对话渲染</span>
-            <p class="bd-switch-description" id="bd-enabled-description">为角色台词和心理活动显示头像与情绪标签。</p>
+            <p class="bd-switch-description" id="bd-enabled-description">以轻气泡显示台词和心声，语气词用于匹配头像。</p>
           </div>
           <span class="bd-toggle">
             <input id="bd-enabled" class="bd-enabled bd-toggle-input" type="checkbox" role="switch"

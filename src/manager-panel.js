@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.5";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.5";
-import { applyStyles } from "./dom-renderer.js?v=2.2.5";
-import { STORE_AVATARS } from "./storage.js?v=2.2.5";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.5";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.5";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.6";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.6";
+import { applyStyles, createDialogueRow } from "./dom-renderer.js?v=2.2.6";
+import { STORE_AVATARS } from "./storage.js?v=2.2.6";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.6";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.6";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -618,7 +618,10 @@ class AvatarManagerPanel {
 
   async _applyBubblePreviewStyles(settings = this._styleDraft) {
     const sample = this._getMainDocument().getElementById('bam-reading-sample');
-    if (sample) applyStyles(sample, settings);
+    if (sample) {
+      if (!sample.querySelector('.dc-msg')) sample.append(createDialogueRow(sample.ownerDocument, '林雪', 'say', '雨停了，我们走吧。').node);
+      applyStyles(sample, settings);
+    }
     const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== this._styleSavedBaseline[key]));
     await this.onPreview(changes);
   }
@@ -911,9 +914,8 @@ class AvatarManagerPanel {
         <label for="bam-range-dialogue-font">正文字号</label> <output id="bam-val-dialogue-font" for="bam-range-dialogue-font"></output>
         <input id="bam-range-dialogue-font" type="range" min="12" max="26" step="0.5" style="width:100%">
       </div>
-      <div id="bam-reading-sample" class="bam-reading-sample" aria-label="阅读预览">
+      <div id="bam-reading-sample" class="bam-reading-sample bd-content" aria-label="阅读预览">
         <p>她把书合上，望向窗外。</p>
-        <p class="bam-sample-line">「雨停了，我们走吧。」</p>
       </div>
       <details class="bam-avatar-options"><summary>头像与图片</summary>
       <div style="margin-bottom:16px;">
@@ -1683,7 +1685,7 @@ class AvatarManagerPanel {
       <p class="bam-prompt-hint">直接编辑，保存后生效；{{user}} 等宏由酒馆替换。请保留 @say: / @think: 的姓名|情绪|正文格式。</p>
       <textarea id="bam-prompt-template" class="bam-prompt-textarea" aria-label="注入提示词"></textarea>
       <div class="bam-prompt-heading">情绪与差分匹配</div>
-      <p class="bam-prompt-hint">下方词表用于本地头像匹配，修改不会改变上方提示词。池外描述原样显示并使用基础头像。</p>`;
+      <p class="bam-prompt-hint">下方词表用于本地头像匹配，修改不会改变上方提示词。聊天中隐藏语气词，未匹配的词使用基础头像。</p>`;
     for (let gi = 0; gi < this._moodConfigDraft.length; gi++) {
       const group = this._moodConfigDraft[gi];
       html += `<div class="bam-mood-group" data-group-index="${gi}" style="margin-bottom:14px">

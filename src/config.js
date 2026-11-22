@@ -18,9 +18,9 @@ const DEFAULT_MOOD_GROUPS = Object.freeze([
 // Reading presets use the existing color-mode and font-family settings so backups
 // and synchronized preferences keep the same format.
 export const READING_PALETTES = {
-  light: { label: '白天', paper: '#FAF9F5', ink: '#3B3935', narration: '#53504B', speech: '#2D2B27', name: '#000000', moodBackground: 'rgba(83,80,75,.26)' },
-  dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF', moodBackground: 'rgba(207,203,196,.26)' },
-  parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000', moodBackground: 'rgba(99,80,58,.30)' },
+  light: { label: '白天', paper: '#FAF9F5', ink: '#3B3935', narration: '#53504B', speech: '#2D2B27', name: '#000000', bubbleBorder: 'rgba(83,80,75,.26)' },
+  dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF', bubbleBorder: 'rgba(207,203,196,.26)' },
+  parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000', bubbleBorder: 'rgba(99,80,58,.30)' },
 };
 // Older profiles stored a shared or per-character ink color. Use its
 // brightness to choose the corresponding paper without rewriting their backup.
@@ -51,7 +51,7 @@ const STYLE_DEFAULTS = {
   style_globalTextColor: '#d9d9d9',
   style_dialogueFontWeight: 400,
   style_narrationFontWeight: 400,
-  style_nameFontWeight: 800,
+  style_nameFontWeight: 400,
   style_narrationBgColor: '#ffffff',
   style_narrationBgOpacity: 0,
   style_avatarSize: -1,
@@ -61,7 +61,7 @@ const STYLE_DEFAULTS = {
   style_nameFontFamily: 'SimHei',
   style_fontConfigUrl: '',
   style_narrationBorderRadius: 0,
-  style_avatarShape: 'rounded',
+  style_avatarShape: 'square',
   style_globalAvatarFallback: true,
   style_narrationTextIndent: 2,
   style_narrationLineHeight: 1.85,

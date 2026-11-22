@@ -1,6 +1,6 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, normalizeMoodConfig } from "./config.js?v=2.2.5";
-import { GLOBAL_CHAR_ID, getCurrentCharId, buildColorConfigKey } from "./context.js?v=2.2.5";
-import { FontCatalog } from "./fonts.js?v=2.2.5";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, normalizeMoodConfig } from "./config.js?v=2.2.6";
+import { GLOBAL_CHAR_ID, getCurrentCharId } from "./context.js?v=2.2.6";
+import { FontCatalog } from "./fonts.js?v=2.2.6";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog() } = {}) {
@@ -59,9 +59,7 @@ export class RenderAssets {
     if (!avatar && charId) avatar = await this.db.getBlobUrl(charId, name);
     if (!avatar && globalFallback && moodId) avatar = await this.db.getMoodAvatarBlobUrl(GLOBAL_CHAR_ID, name, moodId);
     if (!avatar && globalFallback) avatar = await this.db.getBlobUrl(GLOBAL_CHAR_ID, name);
-    let color = charId ? await this.db.getConfig(buildColorConfigKey(charId, name)) : null;
-    if (!color && globalFallback) color = await this.db.getConfig(buildColorConfigKey(GLOBAL_CHAR_ID, name));
-    return { avatar, color };
+    return { avatar };
   }
 
   async syncFonts(doc) {
