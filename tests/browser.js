@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.2";
-import { AvatarDB } from "../src/storage.js?v=2.2.2";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.2";
+import { createExtension } from "../src/extension.js?v=2.2.3";
+import { AvatarDB } from "../src/storage.js?v=2.2.3";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.3";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -170,4 +170,3 @@ try {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);
   output.dataset.status = 'failed';
 }
-window.addEventListener('pagehide', () => app.dispose(), { once: true });

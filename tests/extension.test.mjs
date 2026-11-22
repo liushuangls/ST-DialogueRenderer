@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.2";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.2";
-import { createExtension } from "../src/extension.js?v=2.2.2";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.2";
+import { AvatarDB } from "../src/storage.js?v=2.2.3";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.3";
+import { createExtension } from "../src/extension.js?v=2.2.3";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.3";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -58,6 +58,36 @@ test('extension toggles generated prompt and rendering together while preserving
     assert.equal([...f.events.values()].reduce((sum, callbacks) => sum + callbacks.size, 0), 0);
     f.dom.window.close();
   }
+});
+
+test('history cache restores the open settings and draft, and a later permanent unload still disposes', async () => {
+  const f = await fixture();
+  try {
+    const win = f.dom.window;
+    const doc = win.document;
+    const manager = await f.app.openManager();
+    await manager._switchTab('mood');
+    const editor = doc.getElementById('bam-prompt-template');
+    const prompt = f.prompts.get(PROMPT_ID).text;
+    editor.value = '尚未保存的提示词';
+    editor.dispatchEvent(new win.Event('input', { bubbles: true }));
+    for (let visit = 0; visit < 2; visit++) {
+      win.dispatchEvent(new win.PageTransitionEvent('pagehide', { persisted: true }));
+      win.dispatchEvent(new win.PageTransitionEvent('pageshow', { persisted: true }));
+      await tick();
+      assert.equal(doc.querySelectorAll('.bd-settings').length, 1);
+      assert.equal(doc.getElementById('bam-prompt-template'), editor);
+      assert.equal(editor.value, '尚未保存的提示词');
+      assert.equal(f.prompts.get(PROMPT_ID).text, prompt);
+    }
+    await manager._saveMoodConfig();
+    assert.equal(f.prompts.get(PROMPT_ID).text, editor.value);
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide', { persisted: false }));
+    await tick();
+    assert.equal(doc.querySelector('.bd-settings'), null);
+    assert.equal(doc.getElementById('bam-panel'), null);
+    assert.equal(f.prompts.get(PROMPT_ID).text, '');
+  } finally { await f.close(); }
 });
 
 test('returning to the foreground or reconnecting syncs resources without rebuilding messages', async t => {

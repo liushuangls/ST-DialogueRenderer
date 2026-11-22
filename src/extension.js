@@ -1,10 +1,10 @@
-import { AvatarDB } from "./storage.js?v=2.2.2";
-import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.2.2";
-import { configureContext } from "./context.js?v=2.2.2";
-import { buildInjectionPrompt } from "./protocol.js?v=2.2.2";
-import { RenderAssets } from "./assets.js?v=2.2.2";
-import { DialogueController } from "./controller.js?v=2.2.2";
-import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.2.2";
+import { AvatarDB } from "./storage.js?v=2.2.3";
+import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.2.3";
+import { configureContext } from "./context.js?v=2.2.3";
+import { buildInjectionPrompt } from "./protocol.js?v=2.2.3";
+import { RenderAssets } from "./assets.js?v=2.2.3";
+import { DialogueController } from "./controller.js?v=2.2.3";
+import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.2.3";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 
@@ -88,7 +88,7 @@ export function createExtension({ getContext, document = globalThis.document,
     await ready;
     if (disposed) throw new Error('对话渲染扩展已关闭');
     if (!panelPromise) {
-      panelPromise = import("./manager-panel.js?v=2.2.2").then(({ AvatarManagerPanel }) => {
+      panelPromise = import("./manager-panel.js?v=2.2.3").then(({ AvatarManagerPanel }) => {
         if (disposed) throw new Error('对话渲染扩展已关闭');
         panel = new AvatarManagerPanel(db, avatarSync, styleSync, { document,
           onPreview: previewStyles, onClose: () => previewStyles(null), onRefresh: refresh,
@@ -201,10 +201,14 @@ export function createExtension({ getContext, document = globalThis.document,
     };
     document.addEventListener('visibilitychange', resume);
     document.defaultView.addEventListener('online', resume);
-    document.defaultView.addEventListener('pagehide', dispose, { once: true });
+    const onPageHide = event => {
+      // Back/forward cache restores this same document without running APP_READY again.
+      if (!event.persisted) void dispose();
+    };
+    document.defaultView.addEventListener('pagehide', onPageHide);
     listeners.push(() => document.removeEventListener('visibilitychange', resume),
       () => document.defaultView.removeEventListener('online', resume),
-      () => document.defaultView.removeEventListener('pagehide', dispose));
+      () => document.defaultView.removeEventListener('pagehide', onPageHide));
   }
 
   async function dispose() {
