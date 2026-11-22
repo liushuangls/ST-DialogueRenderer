@@ -90,6 +90,7 @@ test('uploaded pool portraits synchronize across devices independently of charac
     const rows = await b.db.list(pool);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].fileName, '青发.png');
+    assert.equal((await b.api.listAvatarPool(b.db)).find(item => item.uploadKey === rows[0].displayName).label, '青发');
     assert.match(await b.db.getBlobUrl(pool, rows[0].displayName), /^\/user\/files\/bdv8_/);
     assert.equal((await b.db.list('_global_')).length, 0);
   } finally { a.stop(); b.stop(); }

@@ -1,10 +1,10 @@
-import { AvatarDB } from "./storage.js?v=2.5.1";
-import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.5.1";
-import { configureContext } from "./context.js?v=2.5.1";
-import { buildInjectionPrompt } from "./protocol.js?v=2.5.1";
-import { RenderAssets } from "./assets.js?v=2.5.1";
-import { DialogueController } from "./controller.js?v=2.5.1";
-import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.5.1";
+import { AvatarDB } from "./storage.js?v=2.6.0";
+import { AvatarSync, GlobalStyleSync } from "./sync.js?v=2.6.0";
+import { configureContext } from "./context.js?v=2.6.0";
+import { buildInjectionPrompt } from "./protocol.js?v=2.6.0";
+import { RenderAssets } from "./assets.js?v=2.6.0";
+import { DialogueController } from "./controller.js?v=2.6.0";
+import { readSettings, SETTINGS_KEY } from "./settings.js?v=2.6.0";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 
@@ -88,7 +88,7 @@ export function createExtension({ getContext, document = globalThis.document,
     await ready;
     if (disposed) throw new Error('对话渲染扩展已关闭');
     if (!panelPromise) {
-      panelPromise = import("./manager-panel.js?v=2.5.1").then(({ AvatarManagerPanel }) => {
+      panelPromise = import("./manager-panel.js?v=2.6.0").then(({ AvatarManagerPanel }) => {
         if (disposed) throw new Error('对话渲染扩展已关闭');
         panel = new AvatarManagerPanel(db, avatarSync, styleSync, { document,
           resolvePreviewAvatar: (name, mood) => assets.resolve(name, mood),

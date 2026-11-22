@@ -1,11 +1,13 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.5.1";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.5.1";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.5.1";
-import { STORE_AVATARS } from "./storage.js?v=2.5.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.1";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.5.1";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.6.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.6.0";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.6.0";
+import { STORE_AVATARS } from "./storage.js?v=2.6.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.6.0";
 
-import { bindPoolPicker } from "./pool-picker.js?v=2.5.1";
+import { bindPoolPicker, bindPoolManager } from "./pool-picker.js?v=2.6.0";
+
+import { portraitNameFromFile } from "./avatar-pool.js?v=2.6.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -106,15 +108,22 @@ class AvatarManagerPanel {
   _openImagePreview(src, title = '') {
     const doc = this._getMainDocument();
     doc.getElementById('bam-image-preview')?.remove();
-    const overlay = doc.createElement('div');
+    const previousFocus = doc.activeElement;
+    const overlay = doc.createElement('button');
+    overlay.type = 'button';
     overlay.id = 'bam-image-preview';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:100010;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;flex-direction:column;cursor:pointer;';
-    overlay.innerHTML = `
-      <div style="color:#999;font-size:12px;margin-bottom:8px;">${escapeHtmlAttr(title)}<span style="margin-left:12px;color:#666;">点击任意处关闭</span></div>
-      <img src="${src}" style="max-width:90vw;max-height:80vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,0.6);" />
-    `;
-    overlay.addEventListener('click', () => overlay.remove());
-    doc.body.appendChild(overlay);
+    overlay.setAttribute('aria-label', '关闭大图');
+    const caption = doc.createElement('span');
+    caption.textContent = title;
+    const img = doc.createElement('img');
+    img.src = src;
+    img.alt = title;
+    overlay.append(img, caption);
+    const close = () => { overlay.remove(); if (previousFocus?.isConnected) previousFocus.focus({preventScroll:true}); };
+    overlay.addEventListener('click', close);
+    overlay.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
+    doc.body.append(overlay);
+    overlay.focus({preventScroll:true});
   }
 
   _openMobileColorDialog({ title = '选择颜色', initialValue = '#58a6ff', onConfirm } = {}) {
@@ -728,6 +737,7 @@ class AvatarManagerPanel {
       this._syncPanelPosition();
       this._setupColorPickerProxy();
 
+      this.currentTab = 'avatar';
       this._bindEvents();
       this._renderAvatarSyncStatus();
       this._renderStyleSyncStatus();
@@ -754,6 +764,8 @@ class AvatarManagerPanel {
       clearTimeout(this._livePreviewTimer);
       this._livePreviewTimer = null;
     }
+    this._renderPoolManager = null;
+    doc.getElementById('bam-image-preview')?.remove();
     const el = doc.getElementById('bam-container');
     if (el) el.remove();
     const st = doc.getElementById('bam-style');
@@ -819,6 +831,9 @@ class AvatarManagerPanel {
       <button class="bam-tab-btn bam-tab-active" data-tab="avatar" style="
         flex:1; padding:10px 0; border:none; background:none; color:#e0e0e0; font-size:13px;
         font-weight:600; cursor:pointer; border-bottom:2px solid #4a6cf7; transition:all 0.2s;">头像管理</button>
+      <button class="bam-tab-btn" data-tab="pool" style="
+        flex:1; padding:10px 0; border:none; background:none; color:#666; font-size:13px;
+        font-weight:500; cursor:pointer; border-bottom:2px solid transparent; transition:all 0.2s;">头像池管理</button>
       <button class="bam-tab-btn" data-tab="style" style="
         flex:1; padding:10px 0; border:none; background:none; color:#666; font-size:13px;
         font-weight:500; cursor:pointer; border-bottom:2px solid transparent; transition:all 0.2s;">正文美化</button>
@@ -857,15 +872,7 @@ class AvatarManagerPanel {
       </div>
       <details id="bam-pool" class="bam-pool">
         <summary>从头像池选择</summary>
-        <div class="bam-pool-tools"><button type="button" class="bam-manage-toggle" aria-expanded="false">管理分组</button></div>
-        <div class="bam-group-editor" hidden>
-          <select aria-label="管理目标分组"></select>
-          <div class="bam-group-input"><input type="text" placeholder="组名" aria-label="组名"><button type="button" data-edit="create">新建</button><button type="button" data-edit="rename">改名</button></div>
-          <div class="bam-group-actions"><button type="button" data-edit="up">上移</button><button type="button" data-edit="down">下移</button><button type="button" data-edit="delete">删除组</button></div>
-          <button type="button" data-edit="move" disabled>将所选头像移入此组</button>
-        </div>
         <div class="bam-pool-sections"></div>
-        <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
         <div role="status" aria-live="polite"></div>
       </details>
       <div id="bam-upload-area" style="
@@ -913,6 +920,19 @@ class AvatarManagerPanel {
       <div id="bam-stats" style="padding:10px 20px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px; color:#555; text-align:center;">已存储: 0 张 | 总计: 0 KB</div>
 
 
+    </div>
+
+    <div id="bam-tab-pool" class="bam-pool" style="display:none">
+        <div class="bam-pool-tools"><button type="button" class="bam-manage-toggle" aria-expanded="false">管理分组</button></div>
+        <div class="bam-group-editor" hidden>
+          <select aria-label="管理目标分组"></select>
+          <div class="bam-group-input"><input type="text" placeholder="组名" aria-label="组名"><button type="button" data-edit="create">新建</button><button type="button" data-edit="rename">改名</button></div>
+          <div class="bam-group-actions"><button type="button" data-edit="up">上移</button><button type="button" data-edit="down">下移</button><button type="button" data-edit="delete">删除组</button></div>
+          <button type="button" data-edit="move" disabled>将所选头像移入此组</button>
+        </div>
+        <div class="bam-pool-sections"></div>
+        <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
+        <div role="status" aria-live="polite"></div>
     </div>
 
     <div id="bam-tab-style" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:16px 20px;">
@@ -1106,10 +1126,15 @@ class AvatarManagerPanel {
       this._openImagePreview(src, thumb.dataset.previewTitle || '');
     });
 
-    const openPool = bindPoolPicker($('#bam-pool'), this.db, {
+    const picker = bindPoolPicker($('#bam-pool'), this.db, {
       selectFile: (file, name, item) => this._handleFileSelected(file, name, item),
       imageMeta: file => this._getImageMeta(file),
+    });
+    this._renderPoolManager = bindPoolManager($('#bam-tab-pool'), this.db, {
+      imageMeta: file => this._getImageMeta(file),
+      preview: (src, label) => this._openImagePreview(src, label),
       changed: () => {
+        picker.refresh();
         this._requestAvatarAssetPreviewRefresh();
         this._refreshList().catch(this.onError);
       },
@@ -1205,7 +1230,7 @@ class AvatarManagerPanel {
       const name = btn.dataset.name;
       if (btn.classList.contains('bam-btn-delete')) this._handleDelete(name);
       else if (btn.classList.contains('bam-btn-rename')) this._handleRename(name);
-      else if (btn.classList.contains('bam-btn-pool')) openPool(name);
+      else if (btn.classList.contains('bam-btn-pool')) picker.open(name);
       else if (btn.classList.contains('bam-btn-replace')) this._handleReplace(name);
       else if (btn.classList.contains('bam-btn-mood-toggle')) this._handleMoodToggle(name);
     });
@@ -1263,8 +1288,7 @@ class AvatarManagerPanel {
     const reader = new FileReader();
     reader.onload = e => { if (this.isOpen && this.pendingFile === file) doc.getElementById('bam-preview-img').src = e.target.result; };
     reader.readAsDataURL(file);
-    const suggested = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, '').toLowerCase().slice(0, 20);
-    doc.getElementById('bam-alias-input').value = name ?? suggested;
+    doc.getElementById('bam-alias-input').value = name ?? poolItem?.label ?? portraitNameFromFile(file.name);
     this._showAliasInput();
   }
 
@@ -1569,6 +1593,7 @@ class AvatarManagerPanel {
   async _switchTab(tabName) {
     const doc = this._getMainDocument();
     this.currentTab = tabName;
+    if (tabName !== 'avatar') doc.getElementById('bam-pool').open = false;
     doc.querySelectorAll('.bam-tab-btn').forEach(btn => {
       const isActive = btn.dataset.tab === tabName;
       btn.style.color = isActive ? '#e0e0e0' : '#666';
@@ -1581,6 +1606,8 @@ class AvatarManagerPanel {
     const importBtn = doc.getElementById('bam-btn-import');
     const exportBtn = doc.getElementById('bam-btn-export');
 
+    const poolTab = doc.getElementById('bam-tab-pool');
+    poolTab.style.display = 'none';
     avatarTab.style.display = 'none';
     styleTab.style.display = 'none';
     moodTab.style.display = 'none';
@@ -1598,6 +1625,10 @@ class AvatarManagerPanel {
       if (this._expandedMoodName) {
         await this._renderMoodPanel(this._expandedMoodName);
       }
+    } else if (tabName === 'pool') {
+      poolTab.style.display = 'flex';
+      importBtn.style.display = exportBtn.style.display = 'none';
+      await this._renderPoolManager();
     } else if (tabName === 'style') {
       styleTab.style.display = 'flex';
       if (!this._styleDraftLoaded) await this._loadStyleSettings();

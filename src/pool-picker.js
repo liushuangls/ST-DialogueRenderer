@@ -1,34 +1,13 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.5.1";
-import { groupedAvatarPool, poolPortraitUrl } from "./avatar-pool.js?v=2.5.1";
-import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.5.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.1";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.0";
+import { groupedAvatarPool, poolPortraitUrl, portraitNameFromFile } from "./avatar-pool.js?v=2.6.0";
+import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.6.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.0";
 
 function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
 }
 
-export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) {
-  const doc = details.ownerDocument;
-  const sections = details.querySelector('.bam-pool-sections');
-  const editor = details.querySelector('.bam-group-editor');
-  const target = editor.querySelector('select');
-  const name = editor.querySelector('input');
-  const manage = details.querySelector('.bam-manage-toggle');
-  const files = details.querySelector('input[type=file]');
-  const status = details.querySelector('[role=status]');
-  const move = editor.querySelector('[data-edit=move]');
-  const selected = new Set();
-  const expanded = new Set();
-  let groups = [];
-  let items = new Map();
-  let revision = 0;
-  let selection = 0;
-  let targetName = '';
-  let uploadGroup;
-  let uploading = false;
-  let firstView = true;
-
-  const report = error => { status.textContent = error.message || String(error); };
+function elements(doc) {
   function node(tag, text, className) {
     const el = doc.createElement(tag);
     if (text !== undefined) el.textContent = text;
@@ -40,6 +19,121 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
     el.type = 'button';
     return el;
   }
+  return {node, button};
+}
+
+// Both views share the grouped gallery, but each supplies its own actions.
+function bindCatalog(root, db, { activate, decorateTile, groupButton }) {
+  const sections = root.querySelector('.bam-pool-sections');
+  const {node, button} = elements(root.ownerDocument);
+  const expanded = new Set();
+  let revision = 0;
+  let firstView = true;
+  async function render() {
+    const version = ++revision;
+    const catalog = await groupedAvatarPool(db);
+    if (version !== revision || !root.isConnected) return;
+    if (firstView) { expanded.add(catalog[0].id); firstView = false; }
+    const rows = await Promise.all(catalog.map(async g => {
+      const section = node('details', undefined, 'bam-pool-group');
+      section.dataset.group = g.id;
+      section.open = expanded.has(g.id);
+      const heading = node('summary');
+      heading.append(node('span', g.name), node('small', String(g.items.length)));
+      section.append(heading);
+      if (groupButton) section.append(groupButton(g));
+      const grid = node('div', undefined, 'bam-pool-grid');
+      const tiles = await Promise.all(g.items.map(async item => {
+        const tile = button();
+        tile.dataset.id = item.id;
+        tile.title = item.label;
+        const image = node('img');
+        image.alt = ''; image.loading = 'lazy';
+        image.src = await poolPortraitUrl(db, item);
+        tile.append(image, node('span', item.label));
+        tile.addEventListener('click', () => activate(item, tile));
+        return decorateTile ? decorateTile(item, tile) : tile;
+      }));
+      const buckets = new Map();
+      for (const [index, item] of g.items.entries()) {
+        const key = item.series || '';
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(tiles[index]);
+      }
+      for (const [series, portraits] of buckets) {
+        if (series || buckets.size > 1) grid.append(node('h4', series || '其他头像'));
+        grid.append(...portraits);
+      }
+      section.append(grid);
+      section.addEventListener('toggle', () => {
+        if (!sections.contains(section)) return;
+        if (section.open) expanded.add(g.id); else expanded.delete(g.id);
+      });
+      return section;
+    }));
+    if (version !== revision || !root.isConnected) return;
+    sections.replaceChildren(...rows);
+    return catalog;
+  }
+  return {render, expanded};
+}
+
+export function bindPoolPicker(details, db, { selectFile, imageMeta }) {
+  const status = details.querySelector('[role=status]');
+  let selection = 0;
+  let targetName;
+  const catalog = bindCatalog(details, db, { activate: async item => {
+    const version = ++selection;
+    try {
+      const url = await poolPortraitUrl(db, item);
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('读取头像失败（HTTP ' + response.status + '）');
+      const bytes = await response.blob();
+      const type = item.mimeType || bytes.type || (item.file?.endsWith('.png') ? 'image/png' : 'image/webp');
+      const file = new File([bytes], item.file || item.label, { type });
+      const meta = await imageMeta(file);
+      if (!meta.width) throw new Error('头像文件无法解码，请重新选择');
+      if (version !== selection || !details.open || !details.isConnected) return;
+      selectFile(file, targetName, item);
+      details.open = false;
+    } catch (error) { if (version === selection) status.textContent = error.message || String(error); }
+  } });
+  function refresh() {
+    if (details.open) catalog.render().catch(error => { status.textContent = error.message || String(error); });
+  }
+  details.addEventListener('toggle', event => {
+    if (event.target !== details) return;
+    if (details.open) { status.textContent = ''; refresh(); }
+    else { selection++; targetName = undefined; }
+  });
+  return {
+    refresh,
+    open(speakerName) {
+      selection++;
+      targetName = speakerName;
+      if (details.open) refresh(); else details.open = true;
+      details.scrollIntoView({ block:'nearest' });
+    },
+  };
+}
+
+export function bindPoolManager(details, db, { preview, imageMeta, changed }) {
+  const doc = details.ownerDocument;
+  const sections = details.querySelector('.bam-pool-sections');
+  const editor = details.querySelector('.bam-group-editor');
+  const target = editor.querySelector('select');
+  const name = editor.querySelector('input');
+  const manage = details.querySelector('.bam-manage-toggle');
+  const files = details.querySelector('input[type=file]');
+  const status = details.querySelector('[role=status]');
+  const move = editor.querySelector('[data-edit=move]');
+  const selected = new Set();
+  const {node, button} = elements(doc);
+  let groups = [];
+  let uploadGroup;
+  let uploading = false;
+
+  const report = error => { status.textContent = error.message || String(error); };
   function updateEditor() {
     const editable = groups.filter(g => g.id !== UNGROUPED);
     const index = editable.findIndex(g => g.id === target.value);
@@ -81,10 +175,10 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
         if (deleting) {
           await db.delete(AVATAR_POOL_SCOPE, item.uploadKey);
           selected.delete(item.id);
-          changed();
         } else {
           await db.renamePoolUpload(item.uploadKey, input.value);
         }
+        changed();
         status.textContent = deleting ? '已从头像池删除' : '头像名称已保存';
         await render();
       } catch (error) {
@@ -97,59 +191,39 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
     remove.addEventListener('click', () => commit(true));
   }
 
-  async function render(preferred) {
-    const version = ++revision;
-    const catalog = await groupedAvatarPool(db);
-    if (version !== revision || !details.isConnected) return;
-    if (firstView) { expanded.add(catalog[0].id); firstView = false; }
-    const rows = await Promise.all(catalog.map(async g => {
-      const section = node('details', undefined, 'bam-pool-group');
-      section.dataset.group = g.id;
-      section.open = expanded.has(g.id);
-      const heading = node('summary');
-      heading.append(node('span', g.name), node('small', String(g.items.length)));
+  const {render: renderCatalog, expanded} = bindCatalog(details, db, {
+    groupButton(group) {
       const upload = button('上传到本组', 'bam-pool-upload');
-      upload.setAttribute('aria-label', '上传到' + g.name);
+      upload.setAttribute('aria-label', '上传到' + group.name);
       upload.disabled = uploading;
-      const grid = node('div', undefined, 'bam-pool-grid');
-      const tiles = await Promise.all(g.items.map(async item => {
-        const tile = button(undefined);
-        tile.dataset.id = item.id;
-        tile.title = item.label;
-        if (!editor.hidden) tile.setAttribute('aria-pressed', String(selected.has(item.id)));
-        const image = node('img');
-        image.alt = ''; image.loading = 'lazy';
-        image.src = await poolPortraitUrl(db, item);
-        tile.append(image, node('span', item.label));
-        if (!item.uploadKey || !editor.hidden) return tile;
-        const entry = node('div', undefined, 'bam-upload-tile');
-        const edit = button('编辑');
-        edit.setAttribute('aria-label', '编辑「' + item.label + '」');
-        edit.addEventListener('click', () => editUpload(item, edit));
-        entry.append(tile, edit);
-        return entry;
-      }));
-      const buckets = new Map();
-      for (const [index, item] of g.items.entries()) {
-        const key = item.series || '';
-        if (!buckets.has(key)) buckets.set(key, []);
-        buckets.get(key).push(tiles[index]);
+      upload.addEventListener('click', () => { uploadGroup = group.id; files.click(); });
+      return upload;
+    },
+    decorateTile(item, tile) {
+      if (!editor.hidden) {
+        tile.setAttribute('aria-pressed', String(selected.has(item.id)));
+        return tile;
       }
-      for (const [series, portraits] of buckets) {
-        if (series || buckets.size > 1) grid.append(node('h4', series || '其他头像'));
-        grid.append(...portraits);
-      }
-      section.append(heading, upload, grid);
-      section.addEventListener('toggle', () => {
-        if (!sections.contains(section)) return;
-        if (section.open) expanded.add(g.id); else expanded.delete(g.id);
-      });
-      return section;
-    }));
-    if (version !== revision || !details.isConnected) return;
+      if (!item.uploadKey) return tile;
+      const entry = node('div', undefined, 'bam-upload-tile');
+      const edit = button('编辑');
+      edit.setAttribute('aria-label', '编辑「' + item.label + '」');
+      edit.addEventListener('click', () => editUpload(item, edit));
+      entry.append(tile, edit);
+      return entry;
+    },
+    activate(item, tile) {
+      if (editor.hidden) { preview(tile.querySelector('img').src, item.label); return; }
+      if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id);
+      tile.setAttribute('aria-pressed', String(selected.has(item.id)));
+      updateEditor();
+    },
+  });
+
+  async function render(preferred) {
+    const catalog = await renderCatalog();
+    if (!catalog) return;
     groups = catalog;
-    items = new Map(groups.flatMap(g => g.items.map(item => [item.id, item])));
-    sections.replaceChildren(...rows);
     const active = preferred || target.value;
     const options = groups.filter(g => g.id !== UNGROUPED).map(g => {
       const option = node('option', g.name); option.value = g.id; return option;
@@ -188,42 +262,6 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
     } catch (error) { report(error); }
   });
 
-  details.addEventListener('toggle', event => {
-    if (event.target !== details) return;
-    if (details.open) render().catch(report);
-    else { selection++; targetName = ''; }
-  });
-  sections.addEventListener('click', async event => {
-    const upload = event.target.closest('button.bam-pool-upload');
-    if (upload) {
-      uploadGroup = upload.closest('[data-group]').dataset.group;
-      files.click();
-      return;
-    }
-    const tile = event.target.closest('button[data-id]');
-    const item = tile && items.get(tile.dataset.id);
-    if (!item) return;
-    if (!editor.hidden) {
-      if (selected.has(item.id)) selected.delete(item.id); else selected.add(item.id);
-      tile.setAttribute('aria-pressed', String(selected.has(item.id)));
-      updateEditor(); return;
-    }
-    const version = ++selection;
-    try {
-      const url = await poolPortraitUrl(db, item);
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('读取头像失败（HTTP ' + response.status + '）');
-      const bytes = await response.blob();
-      const type = item.mimeType || (item.file.endsWith('.png') ? 'image/png' : 'image/webp');
-      const file = new File([bytes], item.file || item.label, { type });
-      const meta = await imageMeta(file);
-      if (!meta.width) throw new Error('头像文件无法解码，请重新选择');
-      if (version !== selection || !details.open || !details.isConnected) return;
-      selectFile(file, targetName, item);
-      details.open = false;
-    } catch (error) { if (version === selection) report(error); }
-  });
-
   files.addEventListener('change', async () => {
     const batch = [...files.files];
     const destination = uploadGroup;
@@ -242,7 +280,7 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
         const meta = await imageMeta(file);
         if (!meta.width) throw new Error(file.name + '：图片无法解码');
         const bytes = await compressImage(file, options);
-        await db.add(AVATAR_POOL_SCOPE, newId(), bytes, { ...meta, poolGroup: destination });
+        await db.add(AVATAR_POOL_SCOPE, newId(), bytes, { ...meta, fileName: portraitNameFromFile(file.name), poolGroup: destination });
         added++;
       }
       expanded.add(destination);
@@ -257,13 +295,5 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
     }
   });
 
-  return speakerName => {
-    targetName = speakerName;
-    editor.hidden = true;
-    manage.setAttribute('aria-expanded', 'false');
-    manage.textContent = '管理分组';
-    selected.clear();
-    if (details.open) render().catch(report); else details.open = true;
-    details.scrollIntoView({ block: 'nearest' });
-  };
+  return render;
 }

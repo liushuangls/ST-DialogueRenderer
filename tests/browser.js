@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.5.1";
-import { AvatarDB } from "../src/storage.js?v=2.5.1";
-import { buildColorConfigKey } from "../src/context.js?v=2.5.1";
+import { createExtension } from "../src/extension.js?v=2.6.0";
+import { AvatarDB } from "../src/storage.js?v=2.6.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.6.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -218,22 +218,22 @@ try {
     for (let i = 0; i < 45; i++) { if (predicate()) return; await tick(); }
     throw new Error('avatar picker did not reach the expected state: ' + poolPicker.querySelector('[role=status]').textContent);
   };
-  const section = id => poolPicker.querySelector('[data-group="' + id + '"]');
+  const pickerSection = id => poolPicker.querySelector('[data-group="' + id + '"]');
   await until(() => poolPicker.querySelectorAll('button[data-id]').length === 90);
   check([...poolPicker.querySelectorAll('[data-group]')].map(el=>el.dataset.group).join() === 'simple,anime,ghibli,jrpg,real', 'group order');
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 160;
   const ctx = canvas.getContext('2d',{willReadFrequently:true});
   for (const groupId of ['anime','ghibli','jrpg']) {
-    const images = section(groupId).querySelectorAll('img');
+    const images = pickerSection(groupId).querySelectorAll('img');
     check(images.length === {anime:50, ghibli:20, jrpg:10}[groupId], 'portrait count for '+groupId);
     for (const img of images) {
       img.loading = 'eager'; await img.decode(); ctx.clearRect(0,0,160,160); ctx.drawImage(img,0,0,160,160);
       check(ctx.getImageData(0,0,1,1).data[3] === 0 && ctx.getImageData(80,80,1,1).data[3] > 200, 'transparent portrait: '+img.src);
     }
   }
-  section('anime').open = true;
-  const firstPortrait = section('anime').querySelector('[data-id="anime01.webp"]');
+  pickerSection('anime').open = true;
+  const firstPortrait = pickerSection('anime').querySelector('[data-id="anime01.webp"]');
   const originalPortrait = await (await fetch(firstPortrait.querySelector('img').src)).blob();
   firstPortrait.click(); await until(() => manager.pendingFile && !poolPicker.open);
   document.getElementById('bam-alias-input').value = '茶馆老板娘';
@@ -243,8 +243,19 @@ try {
   check(rowPicker.getAttribute('aria-label').includes('茶馆老板娘') && !rowPicker.textContent.trim(), 'avatar pool icon label');
   rowPicker.querySelector('svg').dispatchEvent(new MouseEvent('click', {bubbles:true}));
   await until(() => poolPicker.open); await tick();
-  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
-  const editor = poolPicker.querySelector('.bam-group-editor');
+  check(!poolPicker.querySelector('.bam-pool-upload,.bam-group-editor,.bam-upload-tile'), 'management controls leaked into picker');
+  const library = document.getElementById('bam-tab-pool');
+  const section = id => library.querySelector('[data-group="' + id + '"]');
+  document.querySelector('.bam-tab-btn[data-tab="pool"]').click();
+  await until(() => section('anime') && !poolPicker.open);
+  section('anime').open = true;
+  section('anime').querySelector('[data-id="anime01.webp"]').click();
+  const preview = document.getElementById('bam-image-preview');
+  check(preview?.querySelector('img').alt === '五条新菜' && !manager.pendingFile, 'preview must not assign an avatar');
+  preview.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}));
+  check(!preview.isConnected, 'preview did not close');
+  library.querySelector('.bam-manage-toggle').click(); await tick();
+  const editor = library.querySelector('.bam-group-editor');
   editor.querySelector('input').value = '我的画集';
   editor.querySelector('[data-edit=create]').click();
   await until(() => editor.querySelector('select').value.startsWith('custom-'));
@@ -257,12 +268,12 @@ try {
   section('ghibli').querySelector('[data-id="ghibli01.webp"]').click();
   editor.querySelector('[data-edit=move]').click();
   await until(()=>section(groupId).querySelector('[data-id="ghibli01.webp"]'));
-  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
-  const input = poolPicker.querySelector('input[type=file]');
+  library.querySelector('.bam-manage-toggle').click(); await tick();
+  const input = library.querySelector('input[type=file]');
   input.click = () => {};
   section(groupId).querySelector('.bam-pool-upload').click();
   const transfer = new DataTransfer();
-  transfer.items.add(new File([originalPortrait], '池内上传.webp', {type:'image/webp'}));
+  transfer.items.add(new File([originalPortrait], '池内上传.v2.WEBP', {type:'image/webp'}));
   input.files = transfer.files;
   input.dispatchEvent(new Event('change', {bubbles:true}));
   await until(() => section(groupId).querySelector('[data-id^="upload:"]'));
@@ -270,17 +281,26 @@ try {
   const uploadedTile = () => section(groupId).querySelector('[data-id="' + uploadId + '"]');
   const editUploaded = () => uploadedTile().parentElement.querySelector('button[aria-label]').click();
   const uploadForm = () => section(groupId).querySelector('.bam-upload-editor');
+  check(uploadedTile().title === '池内上传.v2', 'upload should strip only the image suffix');
   editUploaded();
-  uploadForm().querySelector('input').value = '池内新名';
+  uploadForm().querySelector('input').value = '池内新名.v2';
   uploadForm().requestSubmit();
-  await until(() => uploadedTile()?.title === '池内新名');
-  uploadedTile().click(); await until(() => manager.pendingFile && !poolPicker.open);
+  await until(() => uploadedTile()?.title === '池内新名.v2');
+  uploadedTile().click();
+  check(document.querySelector('#bam-image-preview img')?.alt === '池内新名.v2', 'uploaded image preview');
+  document.getElementById('bam-image-preview').click();
+  await manager._switchTab('avatar');
+  poolPicker.open = true;
+  await until(() => pickerSection(groupId)?.querySelector('[data-id="' + uploadId + '"]'));
+  pickerSection(groupId).querySelector('[data-id="' + uploadId + '"]').click();
+  await until(() => manager.pendingFile && !poolPicker.open);
+  check(document.getElementById('bam-alias-input').value === '池内新名.v2', 'selection must preserve dotted display names');
   document.getElementById('bam-alias-input').value = '池内选用';
   document.getElementById('bam-btn-confirm-upload').click();
   await until(() => document.querySelector('.bam-avatar-item[data-name="池内选用"]'));
   const savedPoolAvatar = await db.get(manager._getActiveCharId(), '池内选用');
   check(savedPoolAvatar.sourceId === (await db.get('avatar-pool', uploadId.slice(7))).sourceId, 'pool assignment must share its upload source');
-  poolPicker.open = true; await tick();
+  await manager._switchTab('pool');
   editUploaded();
   const confirmDelete = window.confirm;
   try {
@@ -292,7 +312,7 @@ try {
     await until(() => !uploadedTile());
   } finally { window.confirm = confirmDelete; }
   check(await db.get(manager._getActiveCharId(), '池内选用') === null, 'deleting the source left a role assignment');
-  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
+  library.querySelector('.bam-manage-toggle').click(); await tick();
   editor.querySelector('select').value = groupId;
   editor.querySelector('select').dispatchEvent(new Event('change'));
   const originalConfirm = window.confirm;

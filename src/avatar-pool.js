@@ -1,6 +1,6 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.5.1";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.0";
 
-import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.5.1";
+import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.6.0";
 
 const series = [
   ['simple', 's', ['灰紫', '青绿', '陶红', '草绿', '藤紫', '琥珀', '赭石', '玫瑰', '靛蓝', '湖蓝']],
@@ -19,10 +19,15 @@ export const BUILTIN_PORTRAITS = series.flatMap(([group, prefix, names, seriesNa
   return { id: file, group, label, file, series: seriesName };
 }));
 
+export function portraitNameFromFile(name) {
+  // Keep meaningful dots (e.g. 林雪.v2), including on legacy pool uploads.
+  return name.trim().replace(/(?:\.(?:png|jpe?g|webp|gif|bmp|avif))+$/i, '').trim() || '未命名头像';
+}
+
 export async function listAvatarPool(db) {
   const uploads = await db.list(AVATAR_POOL_SCOPE);
   return [...BUILTIN_PORTRAITS, ...uploads.map(row => ({
-    id: 'upload:' + row.displayName, group: row.poolGroup || UNGROUPED, label: row.fileName || row.displayName,
+    id: 'upload:' + row.displayName, group: row.poolGroup || UNGROUPED, label: portraitNameFromFile(row.fileName || row.displayName),
     uploadKey: row.displayName, mimeType: row.mimeType,
   }))];
 }
