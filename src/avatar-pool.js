@@ -1,6 +1,6 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.1";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.2";
 
-import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.4.1";
+import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.4.2";
 
 const series = [
   ['simple', 's', ['灰紫', '青绿', '陶红', '草绿', '藤紫', '琥珀', '赭石', '玫瑰', '靛蓝', '湖蓝']],
@@ -12,6 +12,8 @@ const series = [
   ['ghibli', 'ghibli', ['哈尔', '巴鲁', '荻野千寻', '草壁皋月', '菲奥', '辉夜姬', '玛妮', '佐佐木杏奈', '松崎海', '里见菜穗子'], '电影主角'],
   ['ghibli', 'ghero', ['白龙', '阿席达卡', '小桑', '年轻的苏菲', '琪琪', '娜乌西卡', '希达', '阿莉埃蒂', '月岛雯', '吉冈春'], '电影主角'],
   ['jrpg', 'jrpg', ['赛拉斯', '光', '欧菲莉亚', '普里姆萝洁', '特蕾莎', '海茵特', '爱格妮娅', '卡斯蒂', '斯洛妮', '欧修缇'], '八方旅人 Ⅰ・Ⅱ'],
+  ['real', 'celebrity', ['刘亦菲', '田曦薇', '杨超越', '章若楠', '宋雨琦', '张元英'], '明星'],
+  ['real', 'screen', ['桥本有菜', '石川澪', '三上悠亚', '相泽南', '桃乃木香奈', '明里紬', '涼森玲夢', '天海翼'], '成人演员'],
 ];
 
 export const BUILTIN_PORTRAITS = series.flatMap(([group, prefix, names, seriesName]) => names.map((label, index) => {
