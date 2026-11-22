@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.2.3";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.3";
-import { DialogueController } from "../src/controller.js?v=2.2.3";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.3";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.2.4";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.4";
+import { DialogueController } from "../src/controller.js?v=2.2.4";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.4";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -66,16 +66,21 @@ test('code examples and embedded frontend nodes are not claimed or restyled', ()
   const f = fixture(); const content = addMessage(f.document, 0, '```text\n@say:A|平静|代码示例\n```\n\n' + raw);
   const iframe = f.document.createElement('iframe'); content.append(iframe);
   const details = f.document.createElement('details'); details.innerHTML = '<p>@say:A|平静|总结</p>'; content.append(details);
+  const reasoning = f.document.createElement('div'); reasoning.className = 'TH-render';
+  reasoning.innerHTML = '<p>@think:A|平静|思考栏中的示例</p>'; content.prepend(reasoning);
+  const before = content.innerHTML;
   const pre = content.querySelector('pre');
   const view = decorateMessage(content, f.assets);
   assert.equal(view.count, 2); assert.deepEqual(view.diagnostics, []);
   assert.equal(content.querySelector('iframe'), iframe); assert.equal(content.querySelector('pre'), pre);
   assert.equal(content.querySelector('details'), details);
+  assert.equal(reasoning.firstElementChild.className, '');
   view.dispose();
+  assert.equal(content.innerHTML, before);
   content.innerHTML = converter.makeHtml('```text\n@say:A|平静|代码示例\n```');
-  const before = content.outerHTML;
+  const codeHtml = content.outerHTML;
   const codeOnly = decorateMessage(content, f.assets);
-  assert.equal(content.outerHTML, before); assert.equal(codeOnly.count, 0);
+  assert.equal(content.outerHTML, codeHtml); assert.equal(codeOnly.count, 0);
   f.dom.window.close();
 });
 
@@ -134,7 +139,7 @@ test('resource refresh updates avatars, mood mapping and colors in place and rem
   assert.equal(bubble.querySelector('img'), image);
   assert.equal(image.getAttribute('src'), '/second.png');
   assert.equal(bubble.dataset.moodGroup, 'new-group');
-  assert.equal(bubble.querySelector('.dc-msg-mood').style.getPropertyValue('--bd-mood-accent'), '#0000ff');
+  assert.equal(bubble.querySelector('.dc-msg-mood').dataset.moodMapped, '1');
   assert.notEqual(bubble.style.getPropertyValue('--bd-accent-color'), '#ff0000');
   assert.equal(content.style.getPropertyValue('--bd-dialogue-size'), '20px');
   f.assets.resolve = async () => ({}); f.assets.getMood = () => null;
@@ -142,7 +147,7 @@ test('resource refresh updates avatars, mood mapping and colors in place and rem
   assert.equal(bubble.querySelector('img'), null);
   assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'A');
   assert.equal(bubble.dataset.moodGroup, '');
-  assert.equal(bubble.querySelector('.dc-msg-mood').style.getPropertyValue('--bd-mood-accent'), 'var(--bd-accent-color)');
+  assert.equal(bubble.querySelector('.dc-msg-mood').dataset.moodMapped, '0');
   view.dispose(); f.dom.window.close();
 });
 
@@ -232,7 +237,7 @@ test('rewriting message HTML preserves dialogue styling and can still restore co
     assert.equal(content.classList.contains('bd-content'), true);
     assert.equal(content.querySelectorAll('.dc-msg').length, 2);
     assert.equal(content.querySelectorAll('.dc-msg .dc-msg').length, 0);
-    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), '52px');
+    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), 'var(--bd-auto-avatar)');
     assert.equal(content.querySelector('strong').textContent, '说出口的话');
     assert.equal(content.querySelector('iframe'), iframe);
     const rendered = content.innerHTML; await tick();

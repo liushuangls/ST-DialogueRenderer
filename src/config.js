@@ -18,9 +18,9 @@ const DEFAULT_MOOD_GROUPS = Object.freeze([
 // Reading presets use the existing color-mode and font-family settings so backups
 // and synchronized preferences keep the same format.
 export const READING_PALETTES = {
-  light: { label: '白天', paper: '#FAF9F5', ink: '#3B3935', narration: '#53504B', speech: '#2D2B27', name: '#000000' },
-  dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF' },
-  parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000' },
+  light: { label: '白天', paper: '#FAF9F5', ink: '#3B3935', narration: '#53504B', speech: '#2D2B27', name: '#000000', bubbleBorder: 'rgba(83,80,75,.26)' },
+  dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF', bubbleBorder: 'rgba(207,203,196,.26)' },
+  parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000', bubbleBorder: 'rgba(99,80,58,.30)' },
 };
 // Older profiles stored a shared or per-character ink color. Use its
 // brightness to choose the corresponding paper without rewriting their backup.
@@ -35,34 +35,37 @@ export function readingPaletteId(settings) {
 }
 
 export const READING_FONTS = {
-  'system-ui': { label: '系统黑体', stack: 'system-ui, sans-serif' },
+  SimHei: { label: '黑体', stack: '"SimHei", "Heiti SC", "STHeiti", "WenQuanYi Zen Hei", "Microsoft YaHei", sans-serif' },
+  'system-ui': { label: '系统字体', stack: 'system-ui, sans-serif' },
   'BD Noto Serif SC': { label: '思源宋体', stack: '"Noto Serif SC", "Source Han Serif SC", "BD Noto Serif SC", serif' },
   'BD LXGW WenKai': { label: '霞鹜文楷', stack: '"LXGW WenKai", "霞鹜文楷", "BD LXGW WenKai", serif' },
 };
 
 const STYLE_DEFAULTS = {
-  style_dialogueFontSize: 14.5,
-  style_narrationFontSize: 14,
-  style_dialogueSpacing: 10,
+  style_dialogueFontSize: 15,
+  style_narrationFontSize: 17,
+  // A negative length selects the reader's responsive CSS default. Existing
+  // backups store explicit pixel lengths, including zero for flush text.
+  style_dialogueSpacing: -1,
   style_textColorMode: 'global',
   style_globalTextColor: '#d9d9d9',
   style_dialogueFontWeight: 400,
   style_narrationFontWeight: 400,
-  style_nameFontWeight: 800,
+  style_nameFontWeight: 400,
   style_narrationBgColor: '#ffffff',
   style_narrationBgOpacity: 0,
-  style_avatarSize: 52,
-  style_narrationIndent: 16,
-  style_narrationFontFamily: 'Noto Sans SC',
-  style_dialogueFontFamily: 'Noto Serif SC',
-  style_nameFontFamily: 'Noto Serif SC',
+  style_avatarSize: -1,
+  style_narrationIndent: -1,
+  style_narrationFontFamily: 'SimHei',
+  style_dialogueFontFamily: 'SimHei',
+  style_nameFontFamily: 'SimHei',
   style_fontConfigUrl: '',
   style_narrationBorderRadius: 0,
   style_avatarShape: 'rounded',
   style_globalAvatarFallback: true,
   style_narrationTextIndent: 2,
-  style_narrationLineHeight: 1.75,
-  style_narrationPaddingRight: 16,
+  style_narrationLineHeight: 1.85,
+  style_narrationPaddingRight: -1,
   style_imageCompressEnabled: true,
   style_imageCompressQuality: 0.82,
 };

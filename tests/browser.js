@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.3";
-import { AvatarDB } from "../src/storage.js?v=2.2.3";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.3";
+import { createExtension } from "../src/extension.js?v=2.2.4";
+import { AvatarDB } from "../src/storage.js?v=2.2.4";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.4";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -80,13 +80,13 @@ try {
   const avatar = newest.querySelector('.dc-msg-avatar');
   check(newest.classList.contains('bd-content'), 'HTML rewrite lost the style owner');
   check(getComputedStyle(avatar).position === 'absolute', 'copied avatar lost its layout');
-  check(avatar.getBoundingClientRect().width === 52, 'copied avatar expanded to original image size');
+  check(avatar.getBoundingClientRect().width === (matchMedia('(max-width:480px)').matches ? 40 : 48), 'copied avatar lost its responsive size');
   check(getComputedStyle(newest.querySelector('.dc-msg-header')).display === 'flex', 'copied dialogue header lost its layout');
   check(newest.querySelector('iframe') === externalFrame, 'foreign iframe was replaced');
   await app.setSettings({ enabled: false });
   check(newest.querySelectorAll('.dc-msg,.bd-narration,[data-bd-owned],[data-bd-narration]').length === 0, 'copied projection survived disabling');
   check(newest.querySelector('iframe') === externalFrame, 'disabling replaced a foreign iframe');
-  passes.push('PASS HTML 整段重写后头像保持 52px、姓名布局正常；关闭时恢复原文并保留 iframe');
+  passes.push('PASS HTML 整段重写后头像尺寸、姓名布局正常；关闭时恢复原文并保留 iframe');
   const chatElement = document.getElementById('chat');
   const chatStyle = chatElement.getAttribute('style');
   const avatarSize = app.assets.settings.style_avatarSize;
@@ -121,7 +121,13 @@ try {
   if (chatStyle === null) chatElement.removeAttribute('style'); else chatElement.setAttribute('style', chatStyle);
   await db.setConfig('style_avatarSize', avatarSize); await app.assets.refresh();
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
-  addMessage(raw);
+  const story = addMessage(raw);
+  story.insertAdjacentHTML('afterbegin',
+    '<div class="TH-render"><details open><summary>吾乃小猫之神…</summary><p>@think:示例|平静|思考过程</p></details><iframe title="思考栏"></iframe></div>');
+  const reasoning = story.querySelector('.TH-render');
+  const reasoningFrame = reasoning.querySelector('iframe');
+  const hostColor = getComputedStyle(reasoning).color;
+  const hostBackground = getComputedStyle(story).backgroundColor;
   await app.setSettings({ enabled: true, recentAiCount: 3 }); await tick();
   check(!app.panel, 'manager loaded before opening');
   const manager = await app.openManager();
@@ -130,14 +136,35 @@ try {
   const text = document.querySelector('.dc-msg-text');
   const bubbleNode = document.querySelector('.dc-msg');
   const readingRoot = text.closest('.bd-content');
+  const paragraph = readingRoot.querySelector('.dc-narration-block p');
+  const name = bubbleNode.querySelector('.dc-msg-name');
+  for (const [node, fontSize, lineHeight] of [[paragraph,17,31.45],[text,15,27.75],[name,11,13.75]]) {
+    const style = getComputedStyle(node);
+    check(style.fontFamily.includes('WenQuanYi Zen Hei') && style.fontWeight === '400', 'default reading font');
+    check(parseFloat(style.fontSize) === fontSize && Math.abs(parseFloat(style.lineHeight) - lineHeight) < 0.01, 'default reading metrics');
+  }
+  check(getComputedStyle(paragraph).textIndent === '34px' && getComputedStyle(paragraph).textAlign === 'justify', 'narration alignment');
+  check(getComputedStyle(paragraph.parentElement).paddingLeft === (matchMedia('(max-width:480px)').matches ? '12px' : '20px'), 'page inset');
+  check(getComputedStyle(text).padding === '6px 11px' && getComputedStyle(text).borderRadius === '10px', 'bubble geometry');
+  check(getComputedStyle(bubbleNode).marginTop === '14px' && getComputedStyle(bubbleNode).marginBottom === '16px', 'dialogue spacing');
   const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
-  for (const [mode, paper, speech, narration] of [
-    ['light','rgb(250, 249, 245)','rgb(45, 43, 39)','rgb(83, 80, 75)'],
-    ['dark','rgb(44, 44, 44)','rgb(239, 237, 232)','rgb(207, 203, 196)'],
-    ['parchment','rgb(239, 226, 196)','rgb(66, 50, 31)','rgb(99, 80, 58)'],
+  for (const [mode, paper, speech, narration, border] of [
+    ['light','rgb(250, 249, 245)','rgb(45, 43, 39)','rgb(83, 80, 75)','rgba(83, 80, 75, 0.26)'],
+    ['dark','rgb(44, 44, 44)','rgb(239, 237, 232)','rgb(207, 203, 196)','rgba(207, 203, 196, 0.26)'],
+    ['parchment','rgb(239, 226, 196)','rgb(66, 50, 31)','rgb(99, 80, 58)','rgba(99, 80, 58, 0.3)'],
   ]) {
     document.querySelector(`input[name="bam-palette"][value="${mode}"]`).click(); await tick();
-    check(getComputedStyle(readingRoot).backgroundColor === paper, 'paper color: ' + mode);
+    check(getComputedStyle(readingRoot).backgroundColor === hostBackground, 'paper leaked onto the host: ' + mode);
+    check(reasoning.querySelector('iframe') === reasoningFrame && reasoning.querySelector('p').textContent.startsWith('@think:'), 'reasoning content changed');
+    check(getComputedStyle(reasoning).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(reasoning).color === hostColor, 'reasoning palette: ' + mode);
+    for (const surface of readingRoot.querySelectorAll('[data-bd-owned],[data-bd-narration]')) {
+      check(getComputedStyle(surface).backgroundColor === paper, 'story paper color: ' + mode);
+    }
+    for (const item of [...readingRoot.querySelectorAll('.dc-msg-text,.dc-msg-mood'), document.querySelector('.bam-sample-line')]) {
+      const style = getComputedStyle(item);
+      check(style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.borderTopStyle === 'solid' && style.borderTopColor === border, 'bubble palette: ' + mode);
+    }
+    check(getComputedStyle(bubbleNode.querySelector('.dc-msg-mood')).color === narration, 'mood text color: ' + mode);
     check(getComputedStyle(text).color === speech, 'speech color: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(bubbleNode.querySelector('.dc-ch')).color === nameColor, 'name color: ' + mode);
@@ -150,10 +177,10 @@ try {
   check(getComputedStyle(text).fontFamily.includes('system-ui'), 'reading font preview');
   const size = document.getElementById('bam-range-dialogue-font');
   size.value = '20'; size.dispatchEvent(new Event('input', { bubbles:true })); await tick();
-  check(getComputedStyle(text).fontSize === '20px', 'font size preview');
+  check(getComputedStyle(paragraph).fontSize === '20px' && getComputedStyle(text).fontSize === '18px', 'font size preview');
   manager.close(); await tick();
-  check(getComputedStyle(text).fontSize === '14.5px', 'closing did not roll back unsaved size');
-  passes.push('PASS 三套阅读配色与字体即时生效；未保存关闭恢复；样式预览保留气泡节点');
+  check(getComputedStyle(text).fontSize === '15px', 'closing did not roll back unsaved size');
+  passes.push('PASS 三套纸色仅应用于正文；思考栏沿用原色；台词、心理活动与情绪标签的描边随纸色切换');
   await app.openManager(); await manager._switchTab('mood');
   const promptEditor = document.getElementById('bam-prompt-template');
   check(!promptEditor.readOnly && promptEditor.value.includes('@say:'), 'editable prompt unavailable');

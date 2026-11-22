@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.3";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.3";
-import { createExtension } from "../src/extension.js?v=2.2.3";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.3";
+import { AvatarDB } from "../src/storage.js?v=2.2.4";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.4";
+import { createExtension } from "../src/extension.js?v=2.2.4";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.4";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -133,12 +133,12 @@ test('closing unsaved preview restores saved styles without refreshing fonts for
     const input = doc.getElementById('bam-range-dialogue-font');
     input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
     input.value = '21'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
-    assert.equal(doc.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '21px');
+    assert.equal(doc.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '19px');
     assert.equal(doc.querySelector('.dc-msg'), initialBubble);
     assert.equal(fontSyncs, 0);
     manager.close(); await tick();
     assert.equal(f.app.assets.settings.style_dialogueFontSize, STYLE_DEFAULTS.style_dialogueFontSize);
-    assert.equal(doc.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '14.5px');
+    assert.equal(doc.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '15px');
     assert.equal(await f.db.getConfig('style_dialogueFontSize'), null);
     assert.equal(doc.querySelector('.dc-msg'), initialBubble);
     assert.equal(fontSyncs, 0);
@@ -152,9 +152,9 @@ test('saving styles commits the draft and closing restores the new saved baselin
     const input = f.dom.window.document.getElementById('bam-range-dialogue-font');
     input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
     await manager._saveCurrentStyleSettings(); manager.close(); await tick();
-    assert.equal(await f.db.getConfig('style_dialogueFontSize'), 20);
-    assert.equal(f.app.assets.settings.style_dialogueFontSize, 20);
-    assert.equal(f.dom.window.document.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '20px');
+    assert.equal(await f.db.getConfig('style_narrationFontSize'), 20);
+    assert.equal(await f.db.getConfig('style_dialogueFontSize'), 18);
+    assert.equal(f.dom.window.document.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '18px');
   } finally { await f.close(); }
 });
 
@@ -190,6 +190,11 @@ test('palette and font choices preserve saved geometry, preview in place and rou
     assert.equal(await f.db.getConfig('style_textColorMode'), 'light');
     assert.equal(await f.db.getConfig('style_narrationLineHeight'), 2.15);
     assert.equal(await f.db.getConfig('style_avatarSize'), 100);
+    await manager._loadStyleSettings();
+    await manager._resetStyleDefaults();
+    assert.equal(root.style.getPropertyValue('--bd-narration-line-height'), '1.85');
+    assert.equal(root.style.getPropertyValue('--bd-narration-font'), '"SimHei", "Heiti SC", "STHeiti", "WenQuanYi Zen Hei", "Microsoft YaHei", sans-serif');
+    assert.equal(await f.db.getConfig('style_narrationLineHeight'), 2.15, 'reset is a preview until saved');
   } finally { await f.close(); }
 });
 

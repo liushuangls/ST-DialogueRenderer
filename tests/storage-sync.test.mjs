@@ -259,7 +259,7 @@ test('clear-all creates reset entries and font tombstones', async () => {
   await a.db.addLocalFont('Test',new Blob(['font']),{fileName:'test.woff2'});
   await a.sync.refresh();await b.sync.refresh();
   await a.db.clearAll();await a.sync.refresh();await b.sync.refresh();
-  assert.equal(await b.db.getConfig('style_avatarSize'),52);
+  assert.equal(await b.db.getConfig('style_avatarSize'),-1);
   assert.equal(await b.db.getLocalFont('Test'),null);
   a.stop();b.stop();
 });

@@ -1,10 +1,11 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.3";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.3";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.4";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.4";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
-const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
-const PROTECTED_BLOCKS = PROTECTED.replace('code,', '');
-const STYLE_PROTECTED = PROTECTED_BLOCKS.replace('table,', '');
+export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
+const STYLE_PROTECTED = PROTECTED_VIEWS + ',script,style,custom-style,textarea,button,audio,video';
+const PROTECTED_BLOCKS = STYLE_PROTECTED + ',table';
+const PROTECTED = PROTECTED_BLOCKS + ',code';
 const COLORS = ['#f47b67', '#45ddc0', '#e78bff', '#f0b232', '#58a6ff', '#ff9a76', '#7ee787', '#d2a8ff'];
 let nextViewId = 0;
 
@@ -109,7 +110,6 @@ function bubble(doc, parsed, line, assets, isAlive) {
   const heading = element(doc, 'div', 'dc-msg-header');
   const name = renderName(doc, parsed.name);
   const mood = element(doc, 'span', 'dc-msg-mood', parsed.mood);
-  mood.style.background = 'color-mix(in srgb, var(--bd-mood-accent) 15%, transparent)';
   heading.append(name, mood);
   const text = element(doc, 'div', 'dc-msg-text');
   const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
@@ -118,16 +118,13 @@ function bubble(doc, parsed, line, assets, isAlive) {
   text.append(body, quote);
   msg.append(avatar, heading, text);
   let assetRevision = 0;
-  let appliedMoodColor;
   function updateAssets() {
     const revision = ++assetRevision;
     const group = assets.getMood(parsed.mood);
     const groupId = group?.id || '';
     const mapped = group ? '1' : '0';
-    const moodColor = group?.color || 'var(--bd-accent-color)';
     if (msg.dataset.moodGroup !== groupId) msg.dataset.moodGroup = groupId;
     if (mood.dataset.moodMapped !== mapped) mood.dataset.moodMapped = mapped;
-    if (appliedMoodColor !== moodColor) { mood.style.setProperty('--bd-mood-accent', moodColor); appliedMoodColor = moodColor; }
     assets.resolve(parsed.name, parsed.mood).then(resolved => {
       if (!isAlive() || revision !== assetRevision) return;
       if (resolved.avatar) {
@@ -152,16 +149,17 @@ export function applyStyles(root, settings) {
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
   const palette = READING_PALETTES[mode];
   const fonts = key => READING_FONTS[settings[key]]?.stack ?? (JSON.stringify(settings[key]) + ',system-ui,sans-serif');
-  const size = Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
+  const size = settings.style_avatarSize < 0 ? 'var(--bd-auto-avatar)' : Math.min(120, Math.max(36, Number(settings.style_avatarSize))) + 'px';
   const radius = settings.style_avatarShape === 'circle' ? '50%' : settings.style_avatarShape === 'square' ? '0px' : '8px';
   const css = {
     '--bd-color': palette.ink,
     '--bd-paper': palette.paper,
     '--bd-narration-color': palette.narration,
     '--bd-speech-color': palette.speech,
+    '--bd-bubble-border': palette.bubbleBorder,
     '--bd-name-color': palette.name,
-    '--bd-narration-size': px('style_narrationFontSize', '14px'),
-    '--bd-dialogue-size': px('style_dialogueFontSize', '14.5px'),
+    '--bd-narration-size': px('style_narrationFontSize', '17px'),
+    '--bd-dialogue-size': px('style_dialogueFontSize', '15px'),
     '--bd-narration-weight': settings.style_narrationFontWeight,
     '--bd-dialogue-weight': settings.style_dialogueFontWeight,
     '--bd-name-weight': settings.style_nameFontWeight,
@@ -169,16 +167,14 @@ export function applyStyles(root, settings) {
     '--bd-dialogue-font': fonts('style_dialogueFontFamily'),
     '--bd-name-font': fonts('style_nameFontFamily'),
     '--bd-narration-line-height': settings.style_narrationLineHeight,
-    '--bd-dialogue-line-height': Math.max(Number(settings.style_dialogueFontSize) * 1.35,
+    '--bd-dialogue-line-height': settings.style_dialogueSpacing < 0 ? '1.85' : Math.max(Number(settings.style_dialogueFontSize) * 1.35,
       Number(settings.style_dialogueFontSize) + Number(settings.style_dialogueSpacing)) + 'px',
-    '--bd-narration-left': px('style_narrationIndent', '16px'),
-    '--bd-narration-right': px('style_narrationPaddingRight', '16px'),
+    '--bd-narration-left': settings.style_narrationIndent < 0 ? 'var(--bd-page-inset)' : px('style_narrationIndent', '0px'),
+    '--bd-narration-right': settings.style_narrationPaddingRight < 0 ? 'var(--bd-page-inset)' : px('style_narrationPaddingRight', '0px'),
     '--bd-narration-radius': px('style_narrationBorderRadius', '0px'),
     '--bd-indent': Number(settings.style_narrationTextIndent) + 'em',
 
-    '--bd-avatar-size': size + 'px', '--bd-avatar-radius': radius,
-    '--bd-message-left': (size + 24) + 'px', '--bd-message-min-height': Math.max(56, size + 4) + 'px',
-    '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',
+    '--bd-avatar-size': size, '--bd-avatar-radius': radius,
   };
   for (const [key, value] of Object.entries(css)) {
     const next = String(value);

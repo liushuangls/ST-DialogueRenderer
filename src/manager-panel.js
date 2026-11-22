@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.3";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.3";
-import { applyStyles } from "./dom-renderer.js?v=2.2.3";
-import { STORE_AVATARS } from "./storage.js?v=2.2.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.3";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.3";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.4";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.4";
+import { applyStyles } from "./dom-renderer.js?v=2.2.4";
+import { STORE_AVATARS } from "./storage.js?v=2.2.4";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.4";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.4";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -908,7 +908,7 @@ class AvatarManagerPanel {
         <small>宋体、文楷优先使用本机字体，缺少时按需联网加载。</small>
       </fieldset>
       <div class="bam-reading-field">
-        <label for="bam-range-dialogue-font">字号</label> <output id="bam-val-dialogue-font" for="bam-range-dialogue-font"></output>
+        <label for="bam-range-dialogue-font">正文字号</label> <output id="bam-val-dialogue-font" for="bam-range-dialogue-font"></output>
         <input id="bam-range-dialogue-font" type="range" min="12" max="26" step="0.5" style="width:100%">
       </div>
       <div id="bam-reading-sample" class="bam-reading-sample" aria-label="阅读预览">
@@ -917,8 +917,8 @@ class AvatarManagerPanel {
       </div>
       <details class="bam-avatar-options"><summary>头像与图片</summary>
       <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">头像大小</span><span id="bam-val-avatar-size" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_avatarSize}px</span></div>
-        <input id="bam-range-avatar-size" type="range" min="36" max="120" step="1" value="${STYLE_DEFAULTS.style_avatarSize}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">头像大小</span><span id="bam-val-avatar-size" style="color:#888; font-size:12px;">自动</span></div>
+        <input id="bam-range-avatar-size" type="range" min="35" max="120" step="1" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
       </div>
       <div style="margin-bottom:16px;">
         <div style="color:#ccc; font-size:13px; margin-bottom:6px;">头像形状</div>
@@ -1196,9 +1196,10 @@ class AvatarManagerPanel {
         const original = selectedFont(baseline) === 'original' ? baseline : STYLE_DEFAULTS;
         for (const key of FONT_KEYS) draft[key] = input.value === 'original' ? original[key] : input.value;
       } else if (input.id === 'bam-range-dialogue-font') {
-        draft.style_dialogueFontSize = draft.style_narrationFontSize = input.valueAsNumber;
+        draft.style_narrationFontSize = input.valueAsNumber;
+        draft.style_dialogueFontSize = input.valueAsNumber - 2;
       } else if (input.id === 'bam-range-avatar-size') {
-        draft.style_avatarSize = input.valueAsNumber;
+        draft.style_avatarSize = input.value === input.min ? STYLE_DEFAULTS.style_avatarSize : input.valueAsNumber;
       } else if (input.name === 'bam-avatar-shape') {
         draft.style_avatarShape = input.value;
       } else if (input.id === 'bam-chk-compress-enabled') {
@@ -1590,10 +1591,11 @@ class AvatarManagerPanel {
     };
     setChoice('bam-palette', readingPaletteId(settings));
     setChoice('bam-reading-font', selectedFont(settings));
+    doc.querySelector('input[name="bam-reading-font"][value="original"]').parentElement.hidden = selectedFont(this._styleSavedBaseline) !== 'original';
     setChoice('bam-avatar-shape', settings.style_avatarShape);
     for (const [id, value, label] of [
-      ['dialogue-font', settings.style_dialogueFontSize, settings.style_dialogueFontSize + 'px'],
-      ['avatar-size', settings.style_avatarSize, settings.style_avatarSize + 'px'],
+      ['dialogue-font', settings.style_narrationFontSize, settings.style_narrationFontSize + 'px'],
+      ['avatar-size', settings.style_avatarSize < 0 ? 35 : settings.style_avatarSize, settings.style_avatarSize < 0 ? '自动' : settings.style_avatarSize + 'px'],
       ['compress-quality', settings.style_imageCompressQuality, Number(settings.style_imageCompressQuality).toFixed(2)],
     ]) {
       doc.getElementById('bam-range-' + id).value = value;
@@ -1652,6 +1654,8 @@ class AvatarManagerPanel {
 
   async _resetStyleDefaults() {
     for (const key of [...FONT_KEYS, 'style_textColorMode', 'style_dialogueFontSize', 'style_narrationFontSize',
+      'style_dialogueSpacing', 'style_narrationLineHeight', 'style_narrationIndent', 'style_narrationPaddingRight',
+      'style_narrationTextIndent', 'style_narrationBorderRadius', 'style_dialogueFontWeight', 'style_narrationFontWeight', 'style_nameFontWeight',
       'style_avatarSize', 'style_avatarShape', 'style_imageCompressEnabled', 'style_imageCompressQuality']) {
       this._styleDraft[key] = STYLE_DEFAULTS[key];
     }

@@ -1,6 +1,6 @@
-import { decorateMessage } from "./dom-renderer.js?v=2.2.3";
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.2.3";
-import { isDialogueCandidate } from "./protocol.js?v=2.2.3";
+import { decorateMessage, PROTECTED_VIEWS } from "./dom-renderer.js?v=2.2.4";
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.2.4";
+import { isDialogueCandidate } from "./protocol.js?v=2.2.4";
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, onDiagnostics = () => {}, chatSurface }) {
@@ -55,7 +55,7 @@ export class DialogueController {
         let relevant = false;
         for (const record of records) {
           const node = record.target.nodeType === 1 ? record.target : record.target.parentElement;
-          if (node?.closest('[data-bd-owned],pre,code,iframe,details,.mes_reasoning')) continue;
+          if (node?.closest(PROTECTED_VIEWS + ',code')) continue;
           const content = node?.closest('.mes_text');
           if (content) {
             const message = content.closest('.mes[mesid]');
