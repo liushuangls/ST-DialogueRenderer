@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, writeStyleSnapshot } from "./config.js?v=2.2.0";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.0";
-import { applyStyles } from "./dom-renderer.js?v=2.2.0";
-import { STORE_AVATARS } from "./storage.js?v=2.2.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.0";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.0";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, writeStyleSnapshot } from "./config.js?v=2.2.1";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.1";
+import { applyStyles } from "./dom-renderer.js?v=2.2.1";
+import { STORE_AVATARS } from "./storage.js?v=2.2.1";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.1";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.1";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -618,7 +618,16 @@ class AvatarManagerPanel {
 
   async _applyBubblePreviewStyles(settings = this._styleDraft) {
     const sample = this._getMainDocument().getElementById('bam-reading-sample');
-    if (sample) applyStyles(sample, settings);
+    if (sample) {
+      applyStyles(sample, settings);
+      // The original palette can use dark text on a transparent chat surface.
+      // Give the sample its own contrasting paper inside the dark settings panel.
+      if (!Object.hasOwn(READING_PALETTES, settings.style_textColorMode)) {
+        const { r, g, b } = this._hexToRgb(settings.style_globalTextColor);
+        const lightInk = 0.213 * r + 0.715 * g + 0.072 * b > 128;
+        sample.style.setProperty('--bd-paper', lightInk ? '#212121' : '#faf9f5');
+      }
+    }
     const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== this._styleSavedBaseline[key]));
     await this.onPreview(changes);
   }

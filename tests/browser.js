@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.0";
-import { AvatarDB } from "../src/storage.js?v=2.2.0";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.0";
+import { createExtension } from "../src/extension.js?v=2.2.1";
+import { AvatarDB } from "../src/storage.js?v=2.2.1";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.1";
 
 const output = document.getElementById('result');
 const passes = [];

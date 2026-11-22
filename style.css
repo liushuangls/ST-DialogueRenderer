@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.2.0');
-@import url('./src/reading-fonts.css?v=2.2.0');
+@import url('./src/bubble-style.css?v=2.2.1');
+@import url('./src/reading-fonts.css?v=2.2.1');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -93,6 +93,7 @@
 
 #bam-panel .bam-reading-field { margin:0 0 16px; padding:0; border:0; min-width:0; color:#e0e0e0; font-size:13px }
 #bam-panel .bam-reading-field legend { margin-bottom:8px; padding:0 }
+#bam-panel .bam-reading-field small { display:block; color:#bbc0cb; margin-top:6px; font-size:11px }
 #bam-panel .bam-reading-choices { display:flex; flex-wrap:wrap; gap:6px }
 #bam-panel .bam-reading-choice { display:inline-flex; align-items:center; gap:5px; padding:6px 9px; min-height:36px;
   border:1px solid #ffffff30; border-radius:7px; cursor:pointer; font-size:13px }
