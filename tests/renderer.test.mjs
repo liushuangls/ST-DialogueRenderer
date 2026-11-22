@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.2.4";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.4";
-import { DialogueController } from "../src/controller.js?v=2.2.4";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.4";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.2.5";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.5";
+import { DialogueController } from "../src/controller.js?v=2.2.5";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.5";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -237,7 +237,7 @@ test('rewriting message HTML preserves dialogue styling and can still restore co
     assert.equal(content.classList.contains('bd-content'), true);
     assert.equal(content.querySelectorAll('.dc-msg').length, 2);
     assert.equal(content.querySelectorAll('.dc-msg .dc-msg').length, 0);
-    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), 'var(--bd-auto-avatar)');
+    assert.equal(content.style.getPropertyValue('--bd-avatar-size'), '52px');
     assert.equal(content.querySelector('strong').textContent, '说出口的话');
     assert.equal(content.querySelector('iframe'), iframe);
     const rendered = content.innerHTML; await tick();

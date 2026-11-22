@@ -1,7 +1,7 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.2.4";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.2.4";
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.2.4";
-import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.2.4";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.2.5";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.2.5";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.2.5";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.2.5";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';

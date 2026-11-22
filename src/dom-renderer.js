@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.4";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.4";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.5";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.5";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
@@ -149,14 +149,14 @@ export function applyStyles(root, settings) {
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
   const palette = READING_PALETTES[mode];
   const fonts = key => READING_FONTS[settings[key]]?.stack ?? (JSON.stringify(settings[key]) + ',system-ui,sans-serif');
-  const size = settings.style_avatarSize < 0 ? 'var(--bd-auto-avatar)' : Math.min(120, Math.max(36, Number(settings.style_avatarSize))) + 'px';
+  const size = settings.style_avatarSize < 0 ? 52 : Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
   const radius = settings.style_avatarShape === 'circle' ? '50%' : settings.style_avatarShape === 'square' ? '0px' : '8px';
   const css = {
     '--bd-color': palette.ink,
     '--bd-paper': palette.paper,
     '--bd-narration-color': palette.narration,
     '--bd-speech-color': palette.speech,
-    '--bd-bubble-border': palette.bubbleBorder,
+    '--bd-mood-background': palette.moodBackground,
     '--bd-name-color': palette.name,
     '--bd-narration-size': px('style_narrationFontSize', '17px'),
     '--bd-dialogue-size': px('style_dialogueFontSize', '15px'),
@@ -174,7 +174,8 @@ export function applyStyles(root, settings) {
     '--bd-narration-radius': px('style_narrationBorderRadius', '0px'),
     '--bd-indent': Number(settings.style_narrationTextIndent) + 'em',
 
-    '--bd-avatar-size': size, '--bd-avatar-radius': radius,
+    '--bd-avatar-size': size + 'px', '--bd-avatar-radius': radius,
+    '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',
   };
   for (const [key, value] of Object.entries(css)) {
     const next = String(value);

@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.4";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.4";
-import { createExtension } from "../src/extension.js?v=2.2.4";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.4";
+import { AvatarDB } from "../src/storage.js?v=2.2.5";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.5";
+import { createExtension } from "../src/extension.js?v=2.2.5";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.5";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
