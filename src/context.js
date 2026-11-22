@@ -1,5 +1,6 @@
 const CHAR_ID_SEPARATOR = '__';
 const GLOBAL_CHAR_ID = '_global_';
+export const AVATAR_POOL_SCOPE = 'avatar-pool';
 const STABLE_CHAR_ID_PREFIX = 'card_';
 
 let contextProvider = null;
@@ -22,6 +23,7 @@ export function getCurrentCharacterSyncScope() {
 }
 
 export function getAvatarSyncScopeForCharId(charId) {
+  if (charId === AVATAR_POOL_SCOPE) return AVATAR_POOL_SCOPE;
   if (charId === GLOBAL_CHAR_ID) return 'global';
   if (!charId) return null;
   const scope = getCurrentCharacterSyncScope();
@@ -38,6 +40,7 @@ function encodeStableStorageIdentity(value) {
 }
 
 function storageCharIdFromSyncScope(scope) {
+  if (scope === AVATAR_POOL_SCOPE) return AVATAR_POOL_SCOPE;
   if (scope === 'global') return GLOBAL_CHAR_ID;
   if (typeof scope !== 'string' || !scope.startsWith('character-avatar:')) return '';
   return STABLE_CHAR_ID_PREFIX + encodeStableStorageIdentity(scope);

@@ -75,6 +75,22 @@ async function device(writer, files = new Map(), options = {}) {
   };
 }
 
+test('uploaded pool portraits synchronize across devices independently of character and global overrides', async () => {
+  const a = await device('pool-A');
+  const b = await device('pool-B', a.files);
+  try {
+    const pool = a.api.AVATAR_POOL_SCOPE;
+    await a.db.add(pool, 'pool-image-1', new Blob(['avatar bytes'], {type:'image/png'}), {fileName:'青发.png'});
+    await a.transport.flushNow();
+    await b.transport.refreshCurrentScope();
+    const rows = await b.db.list(pool);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].fileName, '青发.png');
+    assert.match(await b.db.getBlobUrl(pool, rows[0].displayName), /^\/user\/files\/bdv8_/);
+    assert.equal((await b.db.list('_global_')).length, 0);
+  } finally { a.stop(); b.stop(); }
+});
+
 test('template export and import preserve full prompt templates and local mood words atomically', async () => {
   const a = await device('template-A');
   const b = await device('template-B');

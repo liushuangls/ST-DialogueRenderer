@@ -1,6 +1,8 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.2.7";
-import { GLOBAL_CHAR_ID, getCurrentCharId } from "./context.js?v=2.2.7";
-import { FontCatalog } from "./fonts.js?v=2.2.7";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.3.0";
+import { GLOBAL_CHAR_ID, getCurrentCharId, getCurrentContext } from "./context.js?v=2.3.0";
+import { FontCatalog } from "./fonts.js?v=2.3.0";
+
+import { listAvatarPool, pickPoolAvatar, poolPortraitUrl } from "./avatar-pool.js?v=2.3.0";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog() } = {}) {
@@ -11,6 +13,7 @@ export class RenderAssets {
     this.preview = null;
     this.moods = new Map();
     this.cache = new Map();
+    this.pool = null;
     this.fontUrls = new Map();
     this.fontNodes = [];
     this.fontSignature = null;
@@ -37,6 +40,7 @@ export class RenderAssets {
     this.updateMoodGroups(config.mood_config === undefined ? DEFAULT_MOOD_GROUPS
       : normalizeMoodConfig(JSON.parse(config.mood_config)).groups);
     this.cache.clear();
+    this.pool = null;
   }
 
   getMood(text) { return this.moods.get(text.trim()) || null; }
@@ -44,22 +48,31 @@ export class RenderAssets {
   resolve(name, mood) {
     const charId = getCurrentCharId();
     const group = this.getMood(mood);
+    const groupId = getCurrentContext().groupId;
+    const scope = charId || (groupId != null && groupId !== '' ? 'group:' + groupId : 'no-card');
     const globalFallback = this.settings.style_globalAvatarFallback === true;
-    const key = JSON.stringify([charId, name.toLowerCase(), group?.id, globalFallback]);
+    const key = JSON.stringify([scope, name.toLowerCase(), group?.id, globalFallback]);
     if (!this.cache.has(key)) {
-      const pending = this.resolveUncached(charId, name, group?.id, globalFallback);
+      const pending = this.resolveUncached(charId, name, group?.id, globalFallback, scope);
       this.cache.set(key, pending);
       pending.catch(() => { if (this.cache.get(key) === pending) this.cache.delete(key); });
     }
     return this.cache.get(key);
   }
 
-  async resolveUncached(charId, name, moodId, globalFallback) {
+  async resolveUncached(charId, name, moodId, globalFallback, scope) {
     let avatar = charId && moodId ? await this.db.getMoodAvatarBlobUrl(charId, name, moodId) : null;
     if (!avatar && charId) avatar = await this.db.getBlobUrl(charId, name);
     if (!avatar && globalFallback && moodId) avatar = await this.db.getMoodAvatarBlobUrl(GLOBAL_CHAR_ID, name, moodId);
     if (!avatar && globalFallback) avatar = await this.db.getBlobUrl(GLOBAL_CHAR_ID, name);
-    return { avatar };
+    if (avatar) return { avatar };
+    if (!this.pool) {
+      const loading = listAvatarPool(this.db);
+      this.pool = loading;
+      loading.catch(() => { if (this.pool === loading) this.pool = null; });
+    }
+    const pick = pickPoolAvatar(await this.pool, scope, name);
+    return { avatar: await poolPortraitUrl(this.db, pick), poolId: pick.id };
   }
 
   async syncFonts(doc) {

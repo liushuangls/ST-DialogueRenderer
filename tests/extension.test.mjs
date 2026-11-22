@@ -2,10 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.7";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.7";
-import { createExtension } from "../src/extension.js?v=2.2.7";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.7";
+import { AvatarDB } from "../src/storage.js?v=2.3.0";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.3.0";
+import { createExtension } from "../src/extension.js?v=2.3.0";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.3.0";
+
+import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.3.0";
+import { BUILTIN_PORTRAITS, listAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.3.0";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -33,6 +36,36 @@ async function fixture({ syncEnabled = false } = {}) {
   return { dom, db, app, context, events, prompts, get saves() { return saves; },
     async close() { await app.dispose(); dom.window.close(); } };
 }
+
+test('the avatar pool is keyed by card and speaker; explicit and mood images take priority', async () => {
+  const f = await fixture();
+  try {
+    const { assets } = f.app;
+    const card = getCurrentCharId();
+    const file = new Blob(['uploaded portrait'], { type: 'image/png' });
+    await f.db.add(AVATAR_POOL_SCOPE, 'custom', file, { fileName: '自选.png' });
+    await f.app.refresh();
+    const otherCard = card + 'b';
+    const pool = await listAvatarPool(f.db);
+    assert.deepEqual(['男性像素', '女性像素', '多色小人'].map(group => BUILTIN_PORTRAITS.filter(item => item.group === group).length), [5,15,10]);
+    const names = Array.from({length:300}, (_,i) => '人物' + i);
+    assert.ok(names.some(name => pickPoolAvatar(pool, card, name).id !== pickPoolAvatar(pool, otherCard, name).id));
+    const name = names.find(name => pickPoolAvatar(pool, card, name).uploadKey === 'custom');
+    assert.ok(name, 'uploaded entries participate in automatic allocation');
+    const auto = await assets.resolve(name, '平静');
+    assert.equal(auto.avatar, await f.db.getBlobUrl(AVATAR_POOL_SCOPE, 'custom'));
+    assert.equal(pickPoolAvatar([...pool].reverse(), card, name).id, auto.poolId);
+    assert.equal((await assets.resolve(name, '开心')).avatar, auto.avatar);
+    await f.db.add('_global_', name, file);
+    await f.app.refresh();
+    assert.equal((await assets.resolve(name, '平静')).avatar, await f.db.getBlobUrl('_global_', name));
+    await f.db.add(card, name, file);
+    await f.db.addMoodAvatar(card, name, 'mood-calm', file);
+    await f.app.refresh();
+    assert.equal((await assets.resolve(name, '平静')).avatar, await f.db.getMoodAvatarBlobUrl(card, name, 'mood-calm'));
+    assert.equal((await assets.resolve(name, '开心')).avatar, await f.db.getBlobUrl(card, name));
+  } finally { await f.close(); }
+});
 
 test('extension toggles generated prompt and rendering together while preserving host data', async () => {
   const f = await fixture();

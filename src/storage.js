@@ -1,9 +1,9 @@
-import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.2.7";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.2.7";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.2.7";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.2.7";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.7";
-import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.2.7";
+import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.3.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.3.0";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.3.0";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.3.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.3.0";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.3.0";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 1;
@@ -70,7 +70,7 @@ class AvatarDB {
     const existing = await this.get(charId, name);
     if (existing) throw new Error(`角色名 "${name}" 已存在，请使用 update() 或换一个角色名`);
     const record = {
-      alias: key, imageBlob,
+      alias: key, imageBlob, syncScope: getAvatarSyncScopeForCharId(charId),
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${name.trim().toLowerCase()}.jpg`,
@@ -229,7 +229,7 @@ class AvatarDB {
     const safeCharId = String(charId || GLOBAL_CHAR_ID);
     const record = {
       id, charId: safeCharId, alias: safeName, moodId,
-      imageBlob,
+      syncScope: getAvatarSyncScopeForCharId(safeCharId), imageBlob,
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${safeName}-${moodId}.jpg`,

@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.2.7');
-@import url('./src/reading-fonts.css?v=2.2.7');
+@import url('./src/bubble-style.css?v=2.3.0');
+@import url('./src/reading-fonts.css?v=2.3.0');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -102,3 +102,16 @@
 #bam-panel .bam-avatar-options summary { cursor:pointer; padding:8px 0 }
 
 #bam-panel .bam-reading-sample .dc-msg { padding-inline:0 }
+
+#bam-panel .bam-pool { flex:none; margin:12px 20px 0; color:#ddd; font-size:13px }
+#bam-panel .bam-pool summary { padding:8px 0; cursor:pointer }
+#bam-panel .bam-pool-tools { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:4px 0 8px }
+#bam-panel .bam-pool-tools :is(button,select), #bam-panel .bam-btn-pool {
+  border:1px solid #ffffff29; border-radius:6px; background:#313238; color:#eee; padding:5px 8px; cursor:pointer;
+}
+#bam-panel .bam-pool-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(54px,1fr)); gap:6px; max-height:34vh; overflow:auto }
+#bam-panel .bam-pool-grid button { min-width:0; border:1px solid transparent; border-radius:5px; padding:3px; background:transparent; color:#ddd; cursor:pointer }
+#bam-panel .bam-pool-grid button:is(:hover,:focus-visible) { border-color:#85a6ff }
+#bam-panel .bam-pool-grid img { display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:3px }
+#bam-panel .bam-pool-grid span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px }
+#bam-panel .bam-pool [role=status]:not(:empty) { margin:6px 0; overflow-wrap:anywhere }

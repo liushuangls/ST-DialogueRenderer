@@ -1,9 +1,11 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.7";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.7";
-import { applyStyles, createDialogueRow } from "./dom-renderer.js?v=2.2.7";
-import { STORE_AVATARS } from "./storage.js?v=2.2.7";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.7";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.7";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.3.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.3.0";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.3.0";
+import { STORE_AVATARS } from "./storage.js?v=2.3.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.3.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.3.0";
+
+import { bindPoolPicker } from "./pool-picker.js?v=2.3.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -21,10 +23,11 @@ function escapeHtmlAttr(value) {
 
 class AvatarManagerPanel {
   constructor(db, avatarSync, styleSync, { document = globalThis.document,
-    onPreview = async () => {}, onClose = async () => {}, onRefresh = async () => {},
+    resolvePreviewAvatar, onPreview = async () => {}, onClose = async () => {}, onRefresh = async () => {},
     onStylesSaved = async () => {}, onPromptChanged = async () => {}, onError = console.error } = {}) {
     this.db = db;
     this.document = document;
+    this.resolvePreviewAvatar = resolvePreviewAvatar;
     this.onPreview = onPreview;
     this.onClose = onClose;
     this.onRefresh = onRefresh;
@@ -619,7 +622,13 @@ class AvatarManagerPanel {
   async _applyBubblePreviewStyles(settings = this._styleDraft) {
     const sample = this._getMainDocument().getElementById('bam-reading-sample');
     if (sample) {
-      if (!sample.querySelector('.dc-msg')) sample.append(createDialogueRow(sample.ownerDocument, '林雪', 'say', '雨停了，我们走吧。').node);
+      if (!sample.querySelector('.dc-msg')) {
+        const row = createDialogueRow(sample.ownerDocument, '林雪', 'say', '雨停了，我们走吧。');
+        sample.append(row.node);
+        this.resolvePreviewAvatar?.('林雪', '平静').then(({ avatar }) => {
+          if (row.node.isConnected) setDialogueAvatar(row, avatar);
+        }).catch(this.onError);
+      }
       applyStyles(sample, settings);
     }
     const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== this._styleSavedBaseline[key]));
@@ -846,12 +855,22 @@ class AvatarManagerPanel {
         </label>
         <div style="color:#765; font-size:10px; line-height:1.4;">默认开启，同名角色可跨卡共享头像；如需完全隔离，可手动关闭，关闭后绝不自动读取全局分区。</div>
       </div>
+      <details id="bam-pool" class="bam-pool">
+        <summary>从头像池选择</summary>
+        <div class="bam-pool-tools">
+          <select aria-label="头像分类"><option value="">全部头像</option><option>男性像素</option><option>女性像素</option><option>多色小人</option><option>我上传的</option></select>
+          <button type="button" class="bam-pool-upload">上传到头像池</button>
+          <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
+        </div>
+        <div class="bam-pool-grid"></div>
+        <div role="status" aria-live="polite"></div>
+      </details>
       <div id="bam-upload-area" style="
         margin:16px 20px 8px; border:2px dashed rgba(255,255,255,0.12);
         border-radius:12px; padding:20px; text-align:center; cursor:pointer; transition:all 0.2s;
       ">
         <div style="font-size:28px; margin-bottom:6px;">+</div>
-        <div style="color:#888; font-size:13px;">点击或拖拽图片到此处上传</div>
+        <div style="color:#888; font-size:13px;">上传角色专属头像</div>
         <div style="color:#555; font-size:11px; margin-top:4px;">支持 JPG / PNG / GIF / WebP，最大 2MB，推荐 200×200 正方形</div>
         <input id="bam-file-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" style="display:none;" />
       </div>
@@ -885,7 +904,7 @@ class AvatarManagerPanel {
       </div>
 
       <div id="bam-avatar-list" style="flex:1; overflow-y:auto; padding:8px 20px 16px; min-height:100px;">
-        <div id="bam-empty-tip" style="text-align:center; color:#555; padding:30px 0; font-size:13px;">还没有头像，点击上方区域添加</div>
+        <div id="bam-empty-tip" style="text-align:center; color:#555; padding:30px 0; font-size:13px;">还没有指定头像，当前使用头像池自动分配</div>
       </div>
 
       <div id="bam-stats" style="padding:10px 20px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px; color:#555; text-align:center;">已存储: 0 张 | 总计: 0 KB</div>
@@ -990,6 +1009,7 @@ class AvatarManagerPanel {
       <div style="color:#666; font-size:11px; margin-top:2px;">${sourceInfo} ${sizeKB} KB · ${avatar.mimeType.split('/')[1].toUpperCase()}</div>
     </div>
     <div style="display:flex; gap:4px; flex-shrink:0;">
+      <button type="button" class="bam-action-btn bam-btn-pool" data-name="${safeName}" title="从头像池选择" aria-label="为${safeName}从头像池选择">选图</button>
       <button class="bam-action-btn bam-btn-color" data-name="${safeName}" title="修改颜色" style="
         background:rgba(255,255,255,0.06); border:none; color:#888;
         width:28px; height:28px; border-radius:6px; cursor:pointer; font-size:13px;">&#x1F3A8;</button>
@@ -1080,7 +1100,11 @@ class AvatarManagerPanel {
       this._openImagePreview(src, thumb.dataset.previewTitle || '');
     });
 
-    // - 头像管理 Tab 事件 -
+    const openPool = bindPoolPicker($('#bam-pool'), this.db, {
+      selectFile: (file, name) => this._handleFileSelected(file, name),
+      imageMeta: file => this._getImageMeta(file),
+      changed: () => this._requestAvatarAssetPreviewRefresh(),
+    });
 
     $('#bam-upload-area').addEventListener('click', () => $('#bam-file-input').click());
 
@@ -1172,6 +1196,7 @@ class AvatarManagerPanel {
       const name = btn.dataset.name;
       if (btn.classList.contains('bam-btn-delete')) this._handleDelete(name);
       else if (btn.classList.contains('bam-btn-rename')) this._handleRename(name);
+      else if (btn.classList.contains('bam-btn-pool')) openPool(name);
       else if (btn.classList.contains('bam-btn-replace')) this._handleReplace(name);
       else if (btn.classList.contains('bam-btn-color')) this._handleChangeColor(name);
       else if (btn.classList.contains('bam-btn-mood-toggle')) this._handleMoodToggle(name);
@@ -1221,16 +1246,16 @@ class AvatarManagerPanel {
 
   // -- 文件处理 --
 
-  _handleFileSelected(file) {
+  _handleFileSelected(file, name) {
     if (file.size > 2 * 1024 * 1024) { alert('图片不能超过 2MB'); return; }
     if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
     this.pendingFile = file;
     const doc = this._getMainDocument();
     const reader = new FileReader();
-    reader.onload = (e) => { doc.getElementById('bam-preview-img').src = e.target.result; };
+    reader.onload = e => { if (this.isOpen && this.pendingFile === file) doc.getElementById('bam-preview-img').src = e.target.result; };
     reader.readAsDataURL(file);
     const suggested = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_\-\u4e00-\u9fff]/g, '').toLowerCase().slice(0, 20);
-    doc.getElementById('bam-alias-input').value = suggested;
+    doc.getElementById('bam-alias-input').value = name ?? suggested;
     this._showAliasInput();
   }
 
@@ -1247,49 +1272,41 @@ class AvatarManagerPanel {
   }
 
   async _confirmUpload() {
-    if (!this.pendingFile) return;
+    const file = this.pendingFile;
+    if (!file) return;
     const doc = this._getMainDocument();
     const name = doc.getElementById('bam-alias-input').value.trim();
     if (!name) { alert('请输入角色名'); return; }
     const color = this.selectedColor || '#58a6ff';
     const charId = this._getActiveCharId();
-    const confirmBtn = doc.getElementById('bam-btn-confirm-upload');
-    const origText = confirmBtn ? confirmBtn.textContent : '确认添加';
-    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = '处理中...'; }
+    const button = doc.getElementById('bam-btn-confirm-upload');
+    if (button.disabled) return;
+    const label = button.textContent;
+    button.disabled = true;
+    button.textContent = '处理中...';
     try {
-      const meta = await this._getImageMeta(this.pendingFile);
-      const compOpts = await getCompressOptions(this.db);
-      const blob = await compressImage(this.pendingFile, compOpts);
-      await this.db.add(charId, name, blob, meta);
+      const exists = await this.db.get(charId, name);
+      if (exists && !confirm(`角色名 "${name}" 已存在，是否替换图片和颜色？`)) return;
+      const meta = await this._getImageMeta(file);
+      if (!meta.width) throw new Error('图片无法解码');
+      const blob = await compressImage(file, await getCompressOptions(this.db));
+      if (exists) await this.db.update(charId, name, blob, meta);
+      else await this.db.add(charId, name, blob, meta);
       await this.db.setConfig(buildColorConfigKey(charId, name), color);
-      this._hideAliasInput();
-      await this._refreshList();
+      if (button.isConnected) {
+        if (this.pendingFile === file) this._hideAliasInput();
+        await this._refreshList();
+      }
       this._requestAvatarAssetPreviewRefresh();
-    } catch (err) {
-      if (err.message.includes('已存在')) {
-        if (confirm(`角色名 "${name}" 已存在，是否替换图片和颜色？`)) {
-          try {
-            const meta = await this._getImageMeta(this.pendingFile);
-            const compOpts2 = await getCompressOptions(this.db);
-            const rBlob = await compressImage(this.pendingFile, compOpts2);
-            await this.db.update(charId, name, rBlob, meta);
-            await this.db.setConfig(buildColorConfigKey(charId, name), color);
-            this._hideAliasInput();
-            await this._refreshList();
-            this._requestAvatarAssetPreviewRefresh();
-          } catch (e2) { alert('替换失败: ' + e2.message); }
-        }
-      } else { alert('添加失败: ' + err.message); }
-    } finally {
-      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = origText; }
-    }
+    } catch (error) { alert('保存头像失败：' + error.message); }
+    finally { button.disabled = false; button.textContent = label; }
   }
 
   _getImageMeta(file) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => { resolve({ fileName: file.name, width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(img.src); };
-      img.onerror = () => { resolve({ fileName: file.name, width: 0, height: 0 }); };
+      img.onerror = () => { URL.revokeObjectURL(img.src); resolve({ fileName: file.name, width: 0, height: 0 }); };
       img.src = URL.createObjectURL(file);
     });
   }
@@ -1407,7 +1424,7 @@ class AvatarManagerPanel {
     const stats = await this.db.getStats(charId);
     statsEl.textContent = `已存储: ${stats.count} 张 | 总计: ${(stats.totalSize / 1024).toFixed(1)} KB`;
     if (avatars.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:30px 0;font-size:13px;">还没有头像，点击上方区域添加</div>';
+      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:30px 0;font-size:13px;">还没有指定头像，当前使用头像池自动分配</div>';
       return;
     }
     const rows = await Promise.all(avatars.map(async (avatar) => {

@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.7";
-import { AvatarDB } from "../src/storage.js?v=2.2.7";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.7";
+import { createExtension } from "../src/extension.js?v=2.3.0";
+import { AvatarDB } from "../src/storage.js?v=2.3.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.3.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -160,7 +160,7 @@ try {
     check(Math.abs(bubbleRect.left - speakerRect.right - (narrow ? 7 : 9)) < 1, 'speaker-to-bubble gap');
     check(bubbleRect.right <= row.getBoundingClientRect().right, 'bubble overflowed the row');
   }
-  const longSpeech = story.querySelector('.dc-msg-avatar-ph').closest('.dc-msg').querySelector('.dc-msg-text');
+  const longSpeech = story.querySelector('[data-name="茶馆老板娘"] .dc-msg-text');
   check(longSpeech.offsetHeight > (narrow ? 40 : 48) && !longSpeech.textContent.startsWith('「「'), 'long quoted dialogue');
   const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
   for (const [mode, paper, speech, narration, border] of [
@@ -183,8 +183,8 @@ try {
       const ink = getComputedStyle(body);
       check(ink.color === speech && ink.fontSize === '15px' && ink.lineHeight === '27.75px', 'speech typography: ' + mode);
     }
-    const fallback = getComputedStyle(story.querySelector('.dc-msg-avatar-ph'));
-    check(fallback.backgroundImage.includes('svg') && fallback.width === originalAvatarSize && fallback.height === originalAvatarSize, 'fallback portrait: ' + mode);
+    const portrait = story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img');
+    check(portrait?.naturalWidth > 0 && portrait.src.includes('/assets/portraits/') && getComputedStyle(portrait).width === originalAvatarSize, 'automatic pool portrait: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
     check(text.textContent.startsWith('「') && text.textContent.endsWith('」'), 'speech punctuation');
@@ -211,6 +211,37 @@ try {
   check(prompts.get('dialogue-renderer/protocol') === customPrompt, 'edited prompt was not injected verbatim');
   manager.close();
   passes.push('PASS 管理面板按需打开；单一提示词编辑保存；原样注入和模板导出入口');
+  await app.openManager();
+  const poolPicker = document.getElementById('bam-pool');
+  poolPicker.open = true; await tick();
+  const poolGrid = poolPicker.querySelector('.bam-pool-grid');
+  const until = async predicate => {
+    for (let i = 0; i < 45; i++) { if (predicate()) return; await tick(); }
+    throw new Error('avatar picker did not reach the expected state: ' + poolPicker.querySelector('[role=status]').textContent);
+  };
+  await until(() => poolGrid.children.length === 30);
+  await Promise.all([...poolGrid.querySelectorAll('img')].map(image => image.decode()));
+  const firstPortrait = poolGrid.querySelector('[data-id="m01.webp"]');
+  const originalPortrait = await (await fetch(firstPortrait.querySelector('img').src)).blob();
+  firstPortrait.click(); await until(() => manager.pendingFile && !poolPicker.open);
+  document.getElementById('bam-alias-input').value = '茶馆老板娘';
+  document.getElementById('bam-btn-confirm-upload').click();
+  await until(() => document.querySelector('.bam-avatar-item[data-name="茶馆老板娘"]'));
+  const input = poolPicker.querySelector('input[type=file]');
+  const transfer = new DataTransfer();
+  transfer.items.add(new File([originalPortrait], '池内上传.webp', {type:'image/webp'}));
+  input.files = transfer.files; poolPicker.open = true;
+  input.dispatchEvent(new Event('change', {bubbles:true}));
+  await until(() => poolPicker.querySelector('select').value === '我上传的' && poolGrid.querySelector('[data-id^="upload:"]'));
+  poolGrid.querySelector('button').click(); await until(() => manager.pendingFile && !poolPicker.open);
+  document.getElementById('bam-alias-input').value = '池内选用';
+  document.getElementById('bam-btn-confirm-upload').click();
+  await until(() => document.querySelector('.bam-avatar-item[data-name="池内选用"]'));
+  const savedPoolAvatar = await db.get(manager._getActiveCharId(), '池内选用');
+  check(savedPoolAvatar.imageBlob?.size === originalPortrait.size, 'pool assignment must carry a portable image');
+  manager.close(); await app.refresh(); await tick();
+  check(story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img')?.src.startsWith('blob:'), 'manual pool assignment did not override automatic selection');
+  passes.push('PASS 30 张内置图可解码，池内选图指定、本地上传入池、再选用和手动覆盖均生效');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.7";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.7";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.3.0";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.3.0";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
@@ -108,9 +108,27 @@ export function createDialogueRow(doc, name, type, content) {
   return { node: msg, avatar, placeholder };
 }
 
+export function setDialogueAvatar({ avatar, placeholder }, url) {
+  if (!url) {
+    if (avatar.firstElementChild !== placeholder) avatar.replaceChildren(placeholder);
+    return;
+  }
+  let image = avatar.querySelector('img');
+  if (!image) {
+    image = avatar.ownerDocument.createElement('img');
+    image.alt = '';
+    image.addEventListener('error', () => {
+      if (image.parentNode === avatar) avatar.replaceChildren(placeholder);
+    }, { once: true });
+    image.src = url;
+    avatar.replaceChildren(image);
+  } else if (image.getAttribute('src') !== url) image.src = url;
+}
+
 function bubble(doc, parsed, line, assets, isAlive) {
   const range = rangeFor(doc, line, parsed.start, parsed.end);
-  const { node: msg, avatar, placeholder } = createDialogueRow(doc, parsed.name, parsed.type, range ? cloneInline(range) : parsed.text);
+  const row = createDialogueRow(doc, parsed.name, parsed.type, range ? cloneInline(range) : parsed.text);
+  const msg = row.node;
   let assetRevision = 0;
   function updateAssets() {
     const revision = ++assetRevision;
@@ -119,16 +137,7 @@ function bubble(doc, parsed, line, assets, isAlive) {
     if (msg.dataset.moodGroup !== groupId) msg.dataset.moodGroup = groupId;
     assets.resolve(parsed.name, parsed.mood).then(resolved => {
       if (!isAlive() || revision !== assetRevision) return;
-      if (resolved.avatar) {
-        let image = avatar.querySelector('img');
-        if (!image) {
-          image = element(doc, 'img'); image.alt = '';
-          image.addEventListener('error', () => {
-            if (isAlive() && image.parentNode === avatar) avatar.replaceChildren(placeholder);
-          }, { once: true });
-          image.src = resolved.avatar; avatar.replaceChildren(image);
-        } else if (image.getAttribute('src') !== resolved.avatar) image.src = resolved.avatar;
-      } else if (avatar.firstElementChild !== placeholder) avatar.replaceChildren(placeholder);
+      setDialogueAvatar(row, resolved.avatar);
     }).catch(error => { if (isAlive() && revision === assetRevision) assets.onError(error); });
   }
   updateAssets();

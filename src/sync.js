@@ -1,7 +1,7 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.2.7";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext, getCurrentCharId } from "./context.js?v=2.2.7";
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.2.7";
-import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.2.7";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.3.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, storageCharIdFromSyncScope, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext } from "./context.js?v=2.3.0";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.3.0";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.3.0";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';
@@ -505,9 +505,7 @@ class AvatarSync {
 
   async _applyManifest(scope, manifest) {
     const currentScope = getCurrentCharacterSyncScope();
-    const localCharId = scope === 'global'
-      ? GLOBAL_CHAR_ID
-      : (scope === currentScope ? String(getCurrentCharId() || '') : '');
+    const localCharId = scope === 'global' || scope === AVATAR_POOL_SCOPE || scope === currentScope ? storageCharIdFromSyncScope(scope) : '';
     if (!localCharId) return;
 
     const avatarRecords = await this._listAll(STORE_AVATARS);
@@ -582,7 +580,7 @@ class AvatarSync {
     if (this.refreshPromise && !force) return this.refreshPromise;
     const run = async () => {
       await this.db.init();
-      const scopes = ['global', getCurrentCharacterSyncScope()].filter(Boolean);
+      const scopes = ['global', AVATAR_POOL_SCOPE, getCurrentCharacterSyncScope()].filter(Boolean);
       const uniqueScopes = [...new Set(scopes)];
       this._setStatus('syncing', '正在读取头像同步清单…');
       for (const scope of uniqueScopes) {
