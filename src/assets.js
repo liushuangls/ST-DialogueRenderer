@@ -1,8 +1,8 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.6.0";
-import { GLOBAL_CHAR_ID, getCurrentCharId, getCurrentContext } from "./context.js?v=2.6.0";
-import { FontCatalog } from "./fonts.js?v=2.6.0";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.6.1";
+import { GLOBAL_CHAR_ID, getCurrentCharId, getCurrentContext } from "./context.js?v=2.6.1";
+import { FontCatalog } from "./fonts.js?v=2.6.1";
 
-import { listAvatarPool, pickPoolAvatar, poolPortraitUrl } from "./avatar-pool.js?v=2.6.0";
+import { groupedAvatarPool, pickPoolAvatar, poolPortraitUrl } from "./avatar-pool.js?v=2.6.1";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog() } = {}) {
@@ -67,11 +67,13 @@ export class RenderAssets {
     if (!avatar && globalFallback) avatar = await this.db.getBlobUrl(GLOBAL_CHAR_ID, name);
     if (avatar) return { avatar };
     if (!this.pool) {
-      const loading = listAvatarPool(this.db);
+      const loading = groupedAvatarPool(this.db).then(groups => groups.find(group => group.id === 'simple')?.items ?? []);
       this.pool = loading;
       loading.catch(() => { if (this.pool === loading) this.pool = null; });
     }
-    const pick = pickPoolAvatar(await this.pool, scope, name);
+    const candidates = await this.pool;
+    if (!candidates.length) return { avatar: null };
+    const pick = pickPoolAvatar(candidates, scope, name);
     return { avatar: await poolPortraitUrl(this.db, pick), poolId: pick.id };
   }
 

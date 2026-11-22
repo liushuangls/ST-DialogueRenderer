@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.6.0";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.0";
-import { createExtension } from "../src/extension.js?v=2.6.0";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.6.0";
+import { AvatarDB } from "../src/storage.js?v=2.6.1";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.1";
+import { createExtension } from "../src/extension.js?v=2.6.1";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.6.1";
 
-import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.6.0";
-import { BUILTIN_PORTRAITS, listAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.6.0";
+import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.6.1";
+import { BUILTIN_PORTRAITS, groupedAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.6.1";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -43,10 +43,10 @@ test('the avatar pool is keyed by card and speaker; explicit and mood images tak
     const { assets } = f.app;
     const card = getCurrentCharId();
     const file = new Blob(['uploaded portrait'], { type: 'image/png' });
-    await f.db.add(AVATAR_POOL_SCOPE, 'custom', file, { fileName: '自选.png' });
+    await f.db.add(AVATAR_POOL_SCOPE, 'custom', file, { fileName: '自选.png', poolGroup: 'simple' });
     await f.app.refresh();
     const otherCard = card + 'b';
-    const pool = await listAvatarPool(f.db);
+    const pool = (await groupedAvatarPool(f.db)).find(group => group.id === 'simple').items;
     assert.deepEqual(['simple','anime','ghibli','jrpg','real'].map(group => BUILTIN_PORTRAITS.filter(item => item.group === group).length), [10,50,20,10,0]);
     const names = Array.from({length:300}, (_,i) => '人物' + i);
     assert.ok(names.some(name => pickPoolAvatar(pool, card, name).id !== pickPoolAvatar(pool, otherCard, name).id));
@@ -64,6 +64,23 @@ test('the avatar pool is keyed by card and speaker; explicit and mood images tak
     await f.app.refresh();
     assert.equal((await assets.resolve(name, '平静')).avatar, await f.db.getMoodAvatarBlobUrl(card, name, 'mood-calm'));
     assert.equal((await assets.resolve(name, '开心')).avatar, await f.db.getBlobUrl(card, name));
+  } finally { await f.close(); }
+});
+
+test('automatic portraits follow current simple-group membership, including moves, renames and empty groups', async () => {
+  const f = await fixture();
+  try {
+    const moveSimpleToAnime = Object.fromEntries(BUILTIN_PORTRAITS.filter(item => item.group === 'simple')
+      .map(item => ['item:' + item.id, 'anime']));
+    await f.db.editPoolLayout(() => ({...moveSimpleToAnime, 'item:anime01.webp':'simple', 'group:simple':{name:'默认', order:3}}));
+    await f.app.refresh();
+    assert.equal((await f.app.assets.resolve('甲', '平静')).poolId, 'anime01.webp');
+    await f.db.editPoolLayout(() => ({'item:anime01.webp':'anime'}));
+    await f.app.refresh();
+    assert.equal((await f.app.assets.resolve('甲', '平静')).avatar, null);
+    await f.db.editPoolLayout(() => ({'item:s01.png':'simple', 'group:simple':false}));
+    await f.app.refresh();
+    assert.equal((await f.app.assets.resolve('甲', '平静')).avatar, null);
   } finally { await f.close(); }
 });
 

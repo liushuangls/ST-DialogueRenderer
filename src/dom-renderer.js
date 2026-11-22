@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.0";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.0";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.1";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.1";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';

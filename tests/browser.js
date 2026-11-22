@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.6.0";
-import { AvatarDB } from "../src/storage.js?v=2.6.0";
-import { buildColorConfigKey } from "../src/context.js?v=2.6.0";
+import { createExtension } from "../src/extension.js?v=2.6.1";
+import { AvatarDB } from "../src/storage.js?v=2.6.1";
+import { buildColorConfigKey } from "../src/context.js?v=2.6.1";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -184,7 +184,7 @@ try {
       check(ink.color === speech && ink.fontSize === '15px' && ink.lineHeight === '27.75px', 'speech typography: ' + mode);
     }
     const portrait = story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img');
-    check(portrait?.naturalWidth > 0 && portrait.src.includes('/assets/portraits/') && getComputedStyle(portrait).width === originalAvatarSize, 'automatic pool portrait: ' + mode);
+    check(portrait?.naturalWidth > 0 && /\/assets\/portraits\/s\d{2}\.png$/.test(new URL(portrait.src).pathname) && getComputedStyle(portrait).width === originalAvatarSize, 'automatic pool portrait: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
     check(text.textContent.startsWith('「') && text.textContent.endsWith('」'), 'speech punctuation');

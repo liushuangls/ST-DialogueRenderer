@@ -1,13 +1,13 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.6.0";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.6.0";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.6.0";
-import { STORE_AVATARS } from "./storage.js?v=2.6.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.0";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.6.0";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.6.1";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.6.1";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.6.1";
+import { STORE_AVATARS } from "./storage.js?v=2.6.1";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.1";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.6.1";
 
-import { bindPoolPicker, bindPoolManager } from "./pool-picker.js?v=2.6.0";
+import { bindPoolPicker, bindPoolManager } from "./pool-picker.js?v=2.6.1";
 
-import { portraitNameFromFile } from "./avatar-pool.js?v=2.6.0";
+import { portraitNameFromFile } from "./avatar-pool.js?v=2.6.1";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -914,7 +914,7 @@ class AvatarManagerPanel {
       </div>
 
       <div id="bam-avatar-list" style="flex:1; overflow-y:auto; padding:8px 20px 16px; min-height:100px;">
-        <div id="bam-empty-tip" style="text-align:center; color:#555; padding:30px 0; font-size:13px;">还没有指定头像，当前使用头像池自动分配</div>
+        <div id="bam-empty-tip" style="text-align:center; color:#555; padding:30px 0; font-size:13px;">还没有指定头像，默认从简单头像组分配</div>
       </div>
 
       <div id="bam-stats" style="padding:10px 20px; border-top:1px solid rgba(255,255,255,0.06); font-size:12px; color:#555; text-align:center;">已存储: 0 张 | 总计: 0 KB</div>
@@ -1455,7 +1455,7 @@ class AvatarManagerPanel {
     const stats = await this.db.getStats(charId);
     statsEl.textContent = `已存储: ${stats.count} 张 | 总计: ${(stats.totalSize / 1024).toFixed(1)} KB`;
     if (avatars.length === 0) {
-      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:30px 0;font-size:13px;">还没有指定头像，当前使用头像池自动分配</div>';
+      listEl.innerHTML = '<div style="text-align:center;color:#555;padding:30px 0;font-size:13px;">还没有指定头像，默认从简单头像组分配</div>';
       return;
     }
     const rows = await Promise.all(avatars.map(async (avatar) => {
