@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.6";
-import { AvatarDB } from "../src/storage.js?v=2.2.6";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.6";
+import { createExtension } from "../src/extension.js?v=2.2.7";
+import { AvatarDB } from "../src/storage.js?v=2.2.7";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.7";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -40,6 +40,8 @@ try {
   await db.addMoodAvatar('_global_', '测试用户', 'mood-calm', picture('#409867'));
   await db.setConfig('style_globalTextColor', '#292724');
   await db.setConfig(buildColorConfigKey('_global_', '测试用户'), '#bc3344');
+  await db.setConfig('style_narrationFontSize', 17);
+  await db.setConfig('style_dialogueFontSize', 17); // Legacy equal-size slider.
   await db.setConfig('style_narrationBgColor', '#fffdf5');
   await db.setConfig('style_narrationBgOpacity', 1);
   await app.assets.refresh();
@@ -158,7 +160,7 @@ try {
     check(Math.abs(bubbleRect.left - speakerRect.right - (narrow ? 7 : 9)) < 1, 'speaker-to-bubble gap');
     check(bubbleRect.right <= row.getBoundingClientRect().right, 'bubble overflowed the row');
   }
-  const longSpeech = story.querySelector('.dc-msg:last-child .dc-avatar-xs').closest('.dc-msg').querySelector('.dc-msg-text');
+  const longSpeech = story.querySelector('.dc-msg-avatar-ph').closest('.dc-msg').querySelector('.dc-msg-text');
   check(longSpeech.offsetHeight > (narrow ? 40 : 48) && !longSpeech.textContent.startsWith('「「'), 'long quoted dialogue');
   const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
   for (const [mode, paper, speech, narration, border] of [
@@ -177,7 +179,12 @@ try {
       const style = getComputedStyle(item);
       check(style.backgroundColor === 'rgba(0, 0, 0, 0)' && style.border === '1px solid ' + border && style.borderRadius === '10px' && style.padding === '6px 11px' && style.boxShadow === 'none', 'dialogue frame: ' + mode);
     }
-    check(getComputedStyle(text).color === speech, 'speech color: ' + mode);
+    for (const body of story.querySelectorAll('.dc-msg-text-content')) {
+      const ink = getComputedStyle(body);
+      check(ink.color === speech && ink.fontSize === '15px' && ink.lineHeight === '27.75px', 'speech typography: ' + mode);
+    }
+    const fallback = getComputedStyle(story.querySelector('.dc-msg-avatar-ph'));
+    check(fallback.backgroundImage.includes('svg') && fallback.width === originalAvatarSize && fallback.height === originalAvatarSize, 'fallback portrait: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
     check(text.textContent.startsWith('「') && text.textContent.endsWith('」'), 'speech punctuation');

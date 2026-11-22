@@ -1,6 +1,6 @@
-import { decorateMessage, PROTECTED_VIEWS } from "./dom-renderer.js?v=2.2.6";
-import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.2.6";
-import { isDialogueCandidate } from "./protocol.js?v=2.2.6";
+import { decorateMessage, PROTECTED_VIEWS } from "./dom-renderer.js?v=2.2.7";
+import { readSettings, recentAiMessageIds, SETTINGS_KEY } from "./settings.js?v=2.2.7";
+import { isDialogueCandidate } from "./protocol.js?v=2.2.7";
 
 export class DialogueController {
   constructor({ getContext, assets, document, ready = Promise.resolve(), onError = console.error, onDiagnostics = () => {}, chatSurface }) {

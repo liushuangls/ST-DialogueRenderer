@@ -1,9 +1,9 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.2.6";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.2.6";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.2.6";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.2.6";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.6";
-import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.2.6";
+import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.2.7";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.2.7";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.2.7";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.2.7";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.7";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.2.7";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 1;
@@ -688,11 +688,7 @@ class AvatarDB {
 
   //  样式配置
   async exportStyleSettings() {
-    const allConfig = await this.getAllConfig();
-    const settings = {};
-    for (const key of STYLE_CONFIG_KEYS) {
-      settings[key] = allConfig[key] !== undefined ? allConfig[key] : STYLE_DEFAULTS[key];
-    }
+    const settings = readingSettings(await this.getAllConfig());
     return {
       type: 'bubble-style',
       version: '8.0',

@@ -71,6 +71,19 @@ const STYLE_DEFAULTS = {
 };
 const STYLE_CONFIG_KEYS = Object.freeze(Object.keys(STYLE_DEFAULTS));
 
+export function readingSettings(config) {
+  const settings = { ...STYLE_DEFAULTS };
+  for (const key of STYLE_CONFIG_KEYS) {
+    if (config[key] !== undefined) settings[key] = config[key];
+  }
+  // Older versions saved two independent sizes even when the panel showed one slider.
+  if (config.style_narrationFontSize === undefined && config.style_dialogueFontSize !== undefined) {
+    settings.style_narrationFontSize = Number(config.style_dialogueFontSize) + 2;
+  }
+  settings.style_dialogueFontSize = settings.style_narrationFontSize - 2;
+  return settings;
+}
+
 const MOOD_GROUPS = DEFAULT_MOOD_GROUPS.map(({id,label,color}) => ({id,label,color}));
 
 export function normalizeMoodConfig(config) {

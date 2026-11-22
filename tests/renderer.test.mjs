@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.2.6";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.6";
-import { DialogueController } from "../src/controller.js?v=2.2.6";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.6";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.2.7";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.7";
+import { DialogueController } from "../src/controller.js?v=2.2.7";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.7";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -144,10 +144,23 @@ test('resource refresh updates avatars and mood mapping in place and removes sta
   f.assets.resolve = async () => ({}); f.assets.getMood = () => null;
   view.updateAssets(); await tick();
   assert.equal(bubble.querySelector('img'), null);
-  assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'Alice');
+  assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, '');
+  assert.ok(bubble.querySelector('.dc-msg-avatar-ph').style.backgroundColor);
   assert.equal(bubble.dataset.moodGroup, '');
   assert.doesNotMatch(bubble.textContent, /平静/);
   view.dispose(); f.dom.window.close();
+});
+
+test('unconfigured speakers use a stable colored silhouette independent of mood', () => {
+  const f = fixture();
+  const root = addMessage(f.document, 0, '@say:林雪|平静|看雨。\n@say:阿遥|惊讶|真的！\n@think:林雪|担心|晚点再走。');
+  const view = decorateMessage(root, f.assets);
+  const colors = () => [...root.querySelectorAll('.dc-msg-avatar-ph')].map(node => node.style.backgroundColor);
+  assert.deepEqual(colors(), ['rgb(64, 152, 103)', 'rgb(82, 107, 171)', 'rgb(64, 152, 103)']);
+  view.dispose();
+  const again = decorateMessage(root, f.assets);
+  assert.deepEqual(colors(), ['rgb(64, 152, 103)', 'rgb(82, 107, 171)', 'rgb(64, 152, 103)']);
+  again.dispose(); f.dom.window.close();
 });
 
 test('an older avatar request cannot overwrite resources applied by a newer refresh', async () => {
@@ -159,7 +172,7 @@ test('an older avatar request cannot overwrite resources applied by a newer refr
   pending[0]({ avatar: '/old.png', color: '#ff0000' }); await tick();
   assert.equal(content.querySelector('img').getAttribute('src'), '/new.png');
   content.querySelector('img').dispatchEvent(new f.dom.window.Event('error'));
-  assert.equal(content.querySelector('.dc-msg-avatar-ph').textContent, 'Alice');
+  assert.ok(content.querySelector('.dc-msg-avatar-ph').style.backgroundColor);
   view.dispose(); view.updateAssets();
   assert.equal(pending.length, 2);
   f.dom.window.close();

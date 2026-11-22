@@ -4,10 +4,10 @@
   "requires": [],
   "optional": [],
   "dependencies": [],
-  "js": "index.js?v=2.2.6",
-  "css": "style.css?v=2.2.6",
+  "js": "index.js?v=2.2.7",
+  "css": "style.css?v=2.2.7",
   "author": "liushuangls",
-  "version": "2.2.6",
+  "version": "2.2.7",
   "homePage": "https://github.com/liushuangls/ST-DialogueRenderer",
   "hooks": {
     "disable": "onDisable"

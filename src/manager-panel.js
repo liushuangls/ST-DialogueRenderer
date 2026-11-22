@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.6";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.6";
-import { applyStyles, createDialogueRow } from "./dom-renderer.js?v=2.2.6";
-import { STORE_AVATARS } from "./storage.js?v=2.2.6";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.6";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.6";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.7";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.7";
+import { applyStyles, createDialogueRow } from "./dom-renderer.js?v=2.2.7";
+import { STORE_AVATARS } from "./storage.js?v=2.2.7";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.7";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.7";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -1627,7 +1627,7 @@ class AvatarManagerPanel {
 
   async _loadStyleSettings() {
     const config = await this.db.getAllConfig();
-    const settings = { ...STYLE_DEFAULTS, ...Object.fromEntries(Object.entries(config).filter(([key]) => key in STYLE_DEFAULTS)) };
+    const settings = readingSettings(config);
 
     this._styleDraft = { ...settings };
     this._styleSavedBaseline = settings;

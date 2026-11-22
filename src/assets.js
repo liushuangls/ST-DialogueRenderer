@@ -1,6 +1,6 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, normalizeMoodConfig } from "./config.js?v=2.2.6";
-import { GLOBAL_CHAR_ID, getCurrentCharId } from "./context.js?v=2.2.6";
-import { FontCatalog } from "./fonts.js?v=2.2.6";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.2.7";
+import { GLOBAL_CHAR_ID, getCurrentCharId } from "./context.js?v=2.2.7";
+import { FontCatalog } from "./fonts.js?v=2.2.7";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog() } = {}) {
@@ -33,7 +33,7 @@ export class RenderAssets {
     const revision = ++this.revision;
     const config = await this.db.getAllConfig();
     if (this.destroyed || revision !== this.revision) return;
-    this.savedSettings = { ...STYLE_DEFAULTS, ...Object.fromEntries(Object.entries(config).filter(([key]) => key in STYLE_DEFAULTS)) };
+    this.savedSettings = readingSettings(config);
     this.updateMoodGroups(config.mood_config === undefined ? DEFAULT_MOOD_GROUPS
       : normalizeMoodConfig(JSON.parse(config.mood_config)).groups);
     this.cache.clear();

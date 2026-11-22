@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.6";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.6";
-import { createExtension } from "../src/extension.js?v=2.2.6";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.6";
+import { AvatarDB } from "../src/storage.js?v=2.2.7";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.7";
+import { createExtension } from "../src/extension.js?v=2.2.7";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.7";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -155,6 +155,24 @@ test('saving styles commits the draft and closing restores the new saved baselin
     assert.equal(await f.db.getConfig('style_narrationFontSize'), 20);
     assert.equal(await f.db.getConfig('style_dialogueFontSize'), 18);
     assert.equal(f.dom.window.document.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '18px');
+  } finally { await f.close(); }
+});
+
+test('legacy size settings use the same reading size in chat, preview and exported styles', async () => {
+  const f = await fixture();
+  try {
+    await f.db.setConfig('style_dialogueFontSize', 16);
+    await f.app.refresh();
+    assert.equal(f.app.assets.settings.style_narrationFontSize, 18);
+    await f.db.setConfig('style_narrationFontSize', 17);
+    await f.db.setConfig('style_dialogueFontSize', 17);
+    await f.app.refresh();
+    const manager = await f.app.openManager(); await manager._switchTab('style');
+    const doc = f.dom.window.document;
+    for (const root of [doc.querySelector('.mes_text'), doc.getElementById('bam-reading-sample')]) {
+      assert.equal(root.style.getPropertyValue('--bd-dialogue-size'), '15px');
+    }
+    assert.equal((await f.db.exportStyleSettings()).settings.style_dialogueFontSize, 15);
   } finally { await f.close(); }
 });
 

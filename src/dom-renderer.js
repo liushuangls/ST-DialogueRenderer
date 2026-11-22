@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.6";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.6";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.7";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.7";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
@@ -7,6 +7,7 @@ const STYLE_PROTECTED = PROTECTED_VIEWS + ',script,style,custom-style,textarea,b
 const PROTECTED_BLOCKS = STYLE_PROTECTED + ',table';
 const PROTECTED = PROTECTED_BLOCKS + ',code';
 let nextViewId = 0;
+const AVATAR_COLORS = ['#92718f', '#528884', '#ac735c', '#409867', '#7b709c', '#ac8055', '#977047', '#a76477', '#526bab', '#547f9c'];
 
 function element(doc, tag, className, text) {
   const node = doc.createElement(tag);
@@ -91,9 +92,10 @@ export function createDialogueRow(doc, name, type, content) {
   const speaker = element(doc, 'div', 'dc-msg-speaker');
   const avatar = element(doc, 'div', 'dc-msg-avatar');
   avatar.setAttribute('aria-hidden', 'true');
-  const placeholder = element(doc, 'span', 'dc-msg-avatar-ph', name);
-  const letters = [...name.replace(/\s/g, '')].length;
-  if (letters >= 3) placeholder.classList.add(letters >= 5 ? 'dc-avatar-xs' : 'dc-avatar-small');
+  const placeholder = element(doc, 'span', 'dc-msg-avatar-ph');
+  let hash = 0;
+  for (const letter of msg.dataset.name) hash = (Math.imul(hash, 31) + letter.codePointAt(0)) >>> 0;
+  placeholder.style.backgroundColor = AVATAR_COLORS[hash % AVATAR_COLORS.length];
   avatar.append(placeholder);
   speaker.append(element(doc, 'span', 'dc-msg-name', name), avatar);
   const text = element(doc, 'div', 'dc-msg-text');
