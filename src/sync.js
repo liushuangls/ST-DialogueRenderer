@@ -1,9 +1,11 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.4.3";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, storageCharIdFromSyncScope, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext } from "./context.js?v=2.4.3";
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.4.3";
-import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.4.3";
+import { SOURCE_STORE, PORTRAIT_STORES, bindingTombstone, dropPortraitSource, contentId, syncedImagePath, sourceIdFromUrl, requestResult, writeTransaction, pruneUnusedSource } from "./portrait-sources.js?v=2.5.0";
+import { builtinPortraitByFile } from "./avatar-pool.js?v=2.5.0";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.5.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, storageCharIdFromSyncScope, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext } from "./context.js?v=2.5.0";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.5.0";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.5.0";
 
-import { POOL_LAYOUT_KEY, poolSettingNewer } from "./pool-groups.js?v=2.4.3";
+import { POOL_LAYOUT_KEY, poolSettingNewer } from "./pool-groups.js?v=2.5.0";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';
@@ -21,6 +23,8 @@ class AvatarSync {
     this.pendingByScope = new Map();
     this.manifestCache = new Map();
     this.uploadedAssets = new Set();
+    this.uploadingAssets = new Map();
+    this.retiredAt = new Map();
     this.flushTimer = null;
     this.flushChain = Promise.resolve();
     this.refreshPromise = null;
@@ -73,12 +77,24 @@ class AvatarSync {
         if (scope && record.syncScope !== scope) record = { ...record, syncScope: scope };
       }
       const result = await originalPut(storeName, record);
-      if (syncable && record) this._queueUpsert(storeName, record);
+      if (syncable && record) this._queueUpsert(storeName, result || record);
       return result;
+    };
+
+    const originalChangeUpload = db.renamePoolUpload.bind(db);
+    db.renamePoolUpload = async (uploadKey, fileName) => {
+      const record = await originalChangeUpload(uploadKey, fileName);
+      if (record) this._queueUpsert(STORE_AVATARS, record);
+      return record;
     };
 
     const originalDelete = db.delete.bind(db);
     db.delete = async (charId, name) => {
+      if (charId === AVATAR_POOL_SCOPE) {
+        const changes = await originalDelete(charId, name);
+        for (const change of changes) this._queueUpsert(change.storeName, change.record);
+        return changes;
+      }
       const existing = await db.get(charId, name);
       const result = await originalDelete(charId, name);
       this._queueDelete(STORE_AVATARS, {
@@ -203,6 +219,10 @@ class AvatarSync {
   _queueUpsert(storeName, record) {
     if (this.destroyed) return;
     const identity = this._recordIdentity(storeName, record);
+    if (record.deleted) {
+      this._queueDelete(storeName, { ...identity, updatedAt: record.updatedAt, removedSourceId:record.removedSourceId });
+      return;
+    }
     if (!identity.syncScope || !identity.name) {
       this._setStatus('local', '本地已保存；当前角色缺少稳定同步身份');
       return;
@@ -228,7 +248,8 @@ class AvatarSync {
       name: identity.name,
       moodId: identity.moodId || '',
       deleted: true,
-      updatedAt: Date.now(),
+      updatedAt: identity.updatedAt || Date.now(),
+      ...(identity.removedSourceId ? {removedSourceId:identity.removedSourceId} : {}),
     });
   }
 
@@ -258,6 +279,9 @@ class AvatarSync {
     const candidateTime = Number(candidate?.updatedAt) || 0;
     const currentTime = Number(current?.updatedAt) || 0;
     if (candidateTime !== currentTime) return candidateTime > currentTime;
+    if (candidate.scope === AVATAR_POOL_SCOPE && candidate.kind === 'avatar' && !!candidate.deleted !== !!current?.deleted) {
+      return !!candidate.deleted;
+    }
     return String(candidate?.writer || this.writerId) >= String(current?.writer || '');
   }
 
@@ -344,14 +368,6 @@ class AvatarSync {
     return parsed;
   }
 
-  _extensionForMime(mimeType) {
-    const map = {
-      'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif',
-      'image/webp': 'webp', 'image/avif': 'avif', 'image/bmp': 'bmp',
-    };
-    return map[String(mimeType || '').toLowerCase()] || 'webp';
-  }
-
   _safeAssetUrl(value) {
     const url = String(value || '').trim();
     return /^\/user\/files\/bdv8_[a-f0-9]{8,64}\.(?:jpg|png|gif|webp|avif|bmp)$/i.test(url) ? url : null;
@@ -368,17 +384,26 @@ class AvatarSync {
       updatedAt: Number(change.updatedAt) || Date.now(),
       writer: this.writerId,
     };
-    if (change.deleted) return { ...base, deleted: true };
+    if (change.deleted) return { ...base, deleted: true, ...(change.removedSourceId ? {
+      removedSourceId:change.removedSourceId,
+    } : {}) };
 
-    const record = change.record || {};
+    if (change.record?.builtinFile) return { ...base, builtinFile:builtinPortraitByFile(change.record.builtinFile).file,
+      fileName:change.record.fileName, width:change.record.width, height:change.record.height, mimeType:change.record.mimeType,
+      fileSize:change.record.fileSize };
+    const record = await this.db.hydratePortrait(change.record || {});
+    if (!record) return { ...base, deleted:true };
     let assetUrl = this._safeAssetUrl(record.syncedUrl);
     if (record.imageBlob instanceof Blob) {
-      const hash = await this._digest(record.imageBlob);
-      const assetName = AVATAR_SYNC_PREFIX + '_' + hash + '.' + this._extensionForMime(record.imageBlob.type || record.mimeType);
-      assetUrl = '/user/files/' + assetName;
+      const hash = record.sourceId || await contentId(record.imageBlob);
+      assetUrl = syncedImagePath(hash, record.imageBlob.type || record.mimeType);
+      const assetName = assetUrl.split('/').pop();
       if (!this.uploadedAssets.has(assetName)) {
-        await this._uploadBlob(assetName, record.imageBlob);
-        this.uploadedAssets.add(assetName);
+        if (!this.uploadingAssets.has(assetName)) {
+          this.uploadingAssets.set(assetName, this._uploadBlob(assetName, record.imageBlob)
+            .then(() => this.uploadedAssets.add(assetName)).finally(() => this.uploadingAssets.delete(assetName)));
+        }
+        await this.uploadingAssets.get(assetName);
       }
     }
     if (!assetUrl) throw new Error('头像“' + base.name + '”没有可同步的图片数据');
@@ -420,7 +445,10 @@ class AvatarSync {
         changed = true;
       }
     }
-    if (!changed) return current;
+    if (!changed) {
+      if (scope === AVATAR_POOL_SCOPE) await this._purgeRemovedFiles(current);
+      return current;
+    }
     const next = {
       schema: AVATAR_SYNC_SCHEMA,
       version: 1,
@@ -433,7 +461,31 @@ class AvatarSync {
     const blob = new Blob([JSON.stringify(next)], { type: 'application/json' });
     await this._uploadBlob(location.name, blob);
     this.manifestCache.set(scope, { value: next, fetchedAt: Date.now(), location });
+    if (scope === AVATAR_POOL_SCOPE) await this._purgeRemovedFiles(next);
     return next;
+  }
+
+  async _purgeRemovedFiles(manifest) {
+    const entries = Object.values(manifest.entries);
+    for (const entry of entries) {
+      if (entry.kind !== 'avatar' || !entry.deleted || !entry.removedSourceId) continue;
+      const source = await this.db._getByKey(SOURCE_STORE, entry.removedSourceId);
+      const url = source?.pendingPurge;
+      if (!url || sourceIdFromUrl(url) !== source.id || source.deletedAt > entry.updatedAt) continue;
+      const reused = source.updatedAt > source.deletedAt || entries.some(record => !record.deleted &&
+        record.updatedAt > source.deletedAt && sourceIdFromUrl(record.assetUrl) === source.id);
+      if (!reused) {
+        const response = await this._fetchWithTimeout('/api/files/delete', {method:'POST', headers:this._apiHeaders(),
+          body:JSON.stringify({path:url})});
+        if (!response.ok && response.status !== 404) throw new Error('删除同步源文件失败（HTTP ' + response.status + '）');
+        this.uploadedAssets.delete(url.split('/').pop());
+      }
+      await writeTransaction(this.db.db, [SOURCE_STORE], async tx => {
+        const store = tx.objectStore(SOURCE_STORE);
+        const latest = await requestResult(store.get(source.id));
+        if (latest?.pendingPurge === url && latest.deletedAt === source.deletedAt) store.put({...latest, pendingPurge:null});
+      });
+    }
   }
 
   _restoreBatch(scope, changes) {
@@ -486,10 +538,14 @@ class AvatarSync {
 
   _entryToRecord(entry, localCharId) {
     const syncedUrl = this._safeAssetUrl(entry.assetUrl);
-    if (!syncedUrl) throw new Error('头像“' + entry.name + '”缺少有效的同步图片，请重新上传');
+    const builtinFile = entry.builtinFile && entry.kind === 'avatar' && localCharId !== AVATAR_POOL_SCOPE
+      ? builtinPortraitByFile(entry.builtinFile).file : null;
+    if (!syncedUrl && !builtinFile) throw new Error('头像“' + entry.name + '”缺少有效的同步图片，请重新上传');
     const common = {
       ...(localCharId === AVATAR_POOL_SCOPE && typeof entry.poolGroup === 'string' ? { poolGroup: entry.poolGroup } : {}),
       imageBlob: null,
+      sourceId:builtinFile ? 'builtin:' + builtinFile : sourceIdFromUrl(syncedUrl),
+      ...(builtinFile ? {builtinFile} : {}),
       syncedUrl,
       syncScope: entry.scope,
       mimeType: /^image\//i.test(String(entry.mimeType || '')) ? entry.mimeType : 'image/webp',
@@ -530,54 +586,53 @@ class AvatarSync {
       if (layout.some(([id, entry]) => id !== entry.id || entry.scope !== scope)) throw new Error('头像池分组清单标识不匹配');
       if (layout.length) await this.db.mergePoolLayout(layout.map(([, entry]) => entry));
     }
-    const avatarRecords = await this._listAll(STORE_AVATARS);
-    const moodRecords = await this._listAll(STORE_MOOD_AVATARS);
-    const localById = new Map();
-    for (const record of avatarRecords) {
-      const identity = this._recordIdentity(STORE_AVATARS, record);
-      if ((record.syncScope || getAvatarSyncScopeForCharId(identity.charId)) === scope) {
-        localById.set(this._logicalId('avatar', identity.name), { storeName: STORE_AVATARS, record });
+    const retired = new Set();
+    const entries = Object.entries(manifest.entries).filter(([id, entry]) => this._validateEntry(scope, id, entry));
+    if (!entries.length) return;
+    await writeTransaction(this.db.db, [SOURCE_STORE, ...PORTRAIT_STORES], async tx => {
+      const sources = tx.objectStore(SOURCE_STORE);
+      const detached = new Set();
+      for (const [, entry] of entries) {
+        const rev = Number(entry.updatedAt) || 0;
+        if (scope === AVATAR_POOL_SCOPE && entry.deleted && entry.removedSourceId) {
+          if (!/^[a-f0-9]{8,64}$/.test(entry.removedSourceId)) throw new Error('已删除头像的源文件标识无效');
+          await dropPortraitSource(tx, entry.removedSourceId, rev);
+          if ((this.retiredAt.get(entry.removedSourceId) || 0) < rev) retired.add(entry.removedSourceId);
+        }
+        const mood = entry.kind === 'mood';
+        const store = tx.objectStore(mood ? STORE_MOOD_AVATARS : STORE_AVATARS);
+        const key = mood ? buildMoodAvatarKey(localCharId, entry.name, entry.moodId) : buildAvatarKey(localCharId, entry.name);
+        const current = await requestResult(store.get(key));
+        if (current?.updatedAt > rev) continue;
+        if (entry.deleted) {
+          if (current?.sourceId) detached.add(current.sourceId);
+          if (current) store.delete(key);
+          continue;
+        }
+        const record = this._entryToRecord(entry, localCharId);
+        if (current?.sourceId && current.sourceId !== record.sourceId) detached.add(current.sourceId);
+        const source = await requestResult(sources.get(record.sourceId));
+        if (source?.deletedAt && source.deletedAt >= rev) {
+          store.put(bindingTombstone(record, source.deletedAt));
+          continue;
+        }
+        if (!record.builtinFile && (!source || source.updatedAt < rev || !source.syncedUrl)) {
+          sources.put({...source, id:record.sourceId, updatedAt:Math.max(rev,source?.updatedAt||0), syncedUrl:record.syncedUrl});
+        }
+        store.put(record);
       }
-    }
-    for (const record of moodRecords) {
-      const identity = this._recordIdentity(STORE_MOOD_AVATARS, record);
-      if ((record.syncScope || getAvatarSyncScopeForCharId(identity.charId)) === scope) {
-        localById.set(this._logicalId('mood', identity.name, identity.moodId), { storeName: STORE_MOOD_AVATARS, record });
+      for (const id of detached) {
+        if (await pruneUnusedSource(tx, id)) this.db._revokeCachedUrl('source:' + id);
       }
-    }
-
-    const operations = [];
-    for (const [id, entry] of Object.entries(manifest.entries)) {
-      if (!this._validateEntry(scope, id, entry)) continue;
-      const local = localById.get(id);
-      const localTime = Number(local?.record?.updatedAt) || 0;
-      const remoteTime = Number(entry.updatedAt) || 0;
-      if (local && remoteTime < localTime) continue;
-      if (entry.deleted) {
-        if (local) operations.push({ type: 'delete', storeName: local.storeName, key: local.record.id || local.record.alias });
-        continue;
-      }
-      const record = this._entryToRecord(entry, localCharId);
-      if (record) operations.push({ type: 'put', storeName: entry.kind === 'mood' ? STORE_MOOD_AVATARS : STORE_AVATARS, record });
-    }
-    if (!operations.length) return;
-
-    const stores = [...new Set(operations.map((operation) => operation.storeName))];
-    const transaction = this.db.db.transaction(stores, 'readwrite');
-    for (const operation of operations) {
-      const store = transaction.objectStore(operation.storeName);
-      const cacheKey = operation.storeName === STORE_MOOD_AVATARS
-        ? 'mood_' + (operation.record?.id || operation.key)
-        : (operation.record?.alias || operation.key);
-      this.db._revokeCachedUrl(cacheKey);
-      if (operation.type === 'put') store.put(operation.record);
-      else store.delete(operation.key);
-    }
-    await new Promise((resolve, reject) => {
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(new Error('应用远端头像清单失败'));
-      transaction.onabort = () => reject(new Error('应用远端头像清单被中止'));
     });
+    for (const id of retired) {
+      const source = await this.db._getByKey(SOURCE_STORE, id);
+      this.retiredAt.set(id, source.deletedAt);
+      this.db._revokeCachedUrl('source:' + id);
+      for (const name of this.uploadedAssets) {
+        if (sourceIdFromUrl('/user/files/' + name) === id) this.uploadedAssets.delete(name);
+      }
+    }
   }
 
   async _queueNewerLocalRecords(scope, manifest) {
@@ -599,7 +654,10 @@ class AvatarSync {
       const id = this._logicalId(kind, identity.name, identity.moodId);
       const remote = manifest.entries[id];
       const localTime = Number(record.updatedAt) || 0;
-      if (!remote || localTime > (Number(remote.updatedAt) || 0)) this._queueUpsert(storeName, { ...record, syncScope: scope });
+      const remoteTime = Number(remote?.updatedAt) || 0;
+      if (!remote || localTime > remoteTime || (record.deleted && !remote.deleted && localTime === remoteTime)) {
+        this._queueUpsert(storeName, { ...record, syncScope: scope });
+      }
     }
   }
 
@@ -608,12 +666,13 @@ class AvatarSync {
     if (this.refreshPromise && !force) return this.refreshPromise;
     const run = async () => {
       await this.db.init();
-      const scopes = ['global', AVATAR_POOL_SCOPE, getCurrentCharacterSyncScope()].filter(Boolean);
+      const scopes = [AVATAR_POOL_SCOPE, 'global', getCurrentCharacterSyncScope()].filter(Boolean);
       const uniqueScopes = [...new Set(scopes)];
       this._setStatus('syncing', '正在读取头像同步清单…');
       for (const scope of uniqueScopes) {
         const manifest = await this._fetchManifest(scope, true);
         await this._applyManifest(scope, manifest);
+        if (scope === AVATAR_POOL_SCOPE) await this._purgeRemovedFiles(manifest);
         if (publishLocal) await this._queueNewerLocalRecords(scope, manifest);
       }
       if (this.pendingByScope.size) await this.flushNow();

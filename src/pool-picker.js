@@ -1,7 +1,7 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.3";
-import { groupedAvatarPool, poolPortraitUrl } from "./avatar-pool.js?v=2.4.3";
-import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.4.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.3";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.5.0";
+import { groupedAvatarPool, poolPortraitUrl } from "./avatar-pool.js?v=2.5.0";
+import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.5.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.0";
 
 function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
@@ -51,6 +51,52 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
     move.textContent = selected.size ? '移入所选分组（' + selected.size + '）' : '勾选头像后可移动';
   }
 
+  function editUpload(item, trigger) {
+    const previous = sections.querySelector('.bam-upload-editor');
+    if (previous) previous.remove();
+    const form = node('form', undefined, 'bam-upload-editor');
+    const label = node('label', '头像名称');
+    const input = node('input');
+    input.type = 'text';
+    input.value = item.label;
+    input.required = true;
+    label.append(input);
+    const actions = node('div', undefined, 'bam-group-actions');
+    const save = button('保存名字');
+    save.type = 'submit';
+    const remove = button('删除头像', 'bam-upload-delete');
+    const cancel = button('取消');
+    actions.append(save, remove, cancel);
+    form.append(label, actions);
+    trigger.parentElement.after(form);
+    input.focus();
+    input.select();
+
+    cancel.addEventListener('click', () => { form.remove(); trigger.focus(); });
+    async function commit(deleting) {
+      if (save.disabled) return;
+      if (deleting && !doc.defaultView.confirm('从头像池删除「' + item.label + '」？所有使用这张源图的角色头像和情绪差分也会一起删除。')) return;
+      save.disabled = remove.disabled = cancel.disabled = true;
+      try {
+        if (deleting) {
+          await db.delete(AVATAR_POOL_SCOPE, item.uploadKey);
+          selected.delete(item.id);
+          changed();
+        } else {
+          await db.renamePoolUpload(item.uploadKey, input.value);
+        }
+        status.textContent = deleting ? '已从头像池删除' : '头像名称已保存';
+        await render();
+      } catch (error) {
+        report(error);
+      } finally {
+        save.disabled = remove.disabled = cancel.disabled = false;
+      }
+    }
+    form.addEventListener('submit', event => { event.preventDefault(); commit(false); });
+    remove.addEventListener('click', () => commit(true));
+  }
+
   async function render(preferred) {
     const version = ++revision;
     const catalog = await groupedAvatarPool(db);
@@ -75,7 +121,13 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
         image.alt = ''; image.loading = 'lazy';
         image.src = await poolPortraitUrl(db, item);
         tile.append(image, node('span', item.label));
-        return tile;
+        if (!item.uploadKey || !editor.hidden) return tile;
+        const entry = node('div', undefined, 'bam-upload-tile');
+        const edit = button('编辑');
+        edit.setAttribute('aria-label', '编辑「' + item.label + '」');
+        edit.addEventListener('click', () => editUpload(item, edit));
+        entry.append(tile, edit);
+        return entry;
       }));
       const buckets = new Map();
       for (const [index, item] of g.items.entries()) {
@@ -167,7 +219,7 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
       const meta = await imageMeta(file);
       if (!meta.width) throw new Error('头像文件无法解码，请重新选择');
       if (version !== selection || !details.open || !details.isConnected) return;
-      selectFile(file, targetName);
+      selectFile(file, targetName, item);
       details.open = false;
     } catch (error) { if (version === selection) report(error); }
   });

@@ -51,9 +51,13 @@ async function device(writer, files = new Map(), options = {}) {
   const uploads = [];
   const downloads = [];
   let offline = false;
-  transport._fetchWithTimeout = async url => {
+  transport._fetchWithTimeout = async (url, options = {}) => {
     if (offline) throw new Error('offline');
     if (options.onFetch) await options.onFetch(url);
+    if (url === '/api/files/delete') {
+      const {path} = JSON.parse(options.body);
+      return new Response('', {status:files.delete(path) ? 200 : 404});
+    }
     const path = url.split('?')[0];
     downloads.push(path);
     const blob = files.get(path);
@@ -88,6 +92,72 @@ test('uploaded pool portraits synchronize across devices independently of charac
     assert.equal(rows[0].fileName, '青发.png');
     assert.match(await b.db.getBlobUrl(pool, rows[0].displayName), /^\/user\/files\/bdv8_/);
     assert.equal((await b.db.list('_global_')).length, 0);
+  } finally { a.stop(); b.stop(); }
+});
+
+test('editing a pool upload preserves its stable ID, image and group, and an offline deletion survives a stale manifest', async () => {
+  const a = await device('edit-upload-A');
+  const b = await device('edit-upload-B', a.files);
+  const pool = a.api.AVATAR_POOL_SCOPE;
+  const key = 'saved-upload';
+  const id = 'upload:' + key;
+  const refresh = d => d.transport.refreshCurrentScope({force:true});
+  try {
+    await a.db.add(pool, key, new Blob(['picture'], {type:'image/png'}), {fileName:'旧图.png',poolGroup:'real'});
+    await a.db.editPoolLayout(() => ({['item:' + id]:'anime'}));
+    await a.transport.flushNow(); await refresh(b);
+    const imageUrl = await b.db.getBlobUrl(pool, key);
+    await assert.rejects(b.db.renamePoolUpload(key, '  '), /不能为空/);
+    await b.db.renamePoolUpload(key, '  新名字  ');
+    assert.equal((await b.db.get(pool, key)).fileSize, 7);
+    assert.equal(await b.db.getBlobUrl(pool, key), imageUrl);
+    await b.transport.flushNow(); await refresh(a);
+    const anime = (await a.api.groupedAvatarPool(a.db)).find(group => group.id === 'anime');
+    assert.equal(anime.items.find(item => item.id === id).label, '新名字');
+    await a.db.delete(pool, key);
+    // A restarted offline client has its IndexedDB state but no pending in-memory queue.
+    a.transport.pendingByScope.clear();
+    await refresh(a); await refresh(b);
+    assert.equal(await a.db.getBlobUrl(pool, key), null);
+    assert.equal((await b.db.list(pool)).length, 0);
+    await assert.rejects(b.db.renamePoolUpload(key, '已删除'), /不存在/);
+  } finally { a.stop(); b.stop(); }
+});
+
+test('one physical portrait backs equal uploads, assignments and moods; deletion cascades across devices and late-loaded scopes', async () => {
+  const a = await device('sources-A');
+  const b = await device('sources-B', a.files);
+  const pool = a.api.AVATAR_POOL_SCOPE;
+  const bytes = new Blob(['shared portrait'], {type:'image/png'});
+  const refresh = d => d.transport.refreshCurrentScope({force:true});
+  try {
+    await a.db.add(pool, 'one', bytes, {fileName:'池中头像.png'});
+    await a.db.add(pool, 'two', bytes, {fileName:'同图不同名.png'});
+    await a.db.add('_global_', '主角', bytes);
+    await a.db.addMoodAvatar('_global_', '主角', 'mood-calm', bytes);
+    await a.db.add('_global_', '另图', new Blob(['different'], {type:'image/png'}), {fileName:'池中头像.png'});
+    const sources = await a.transport._listAll('portrait_sources');
+    assert.equal(sources.filter(r => r.imageBlob).length, 2);
+    assert.ok((await a.transport._listAll('avatars')).every(r => !r.imageBlob));
+    await a.transport.flushNow(); await refresh(b);
+    const imageUrl = await b.db.getBlobUrl(pool,'one');
+    assert.equal(a.uploads.filter(name => '/user/files/'+name === imageUrl).length, 1);
+    const oldGlobal = JSON.parse(await a.files.get((await a.transport._manifestLocation('global')).url).text());
+    await a.db.delete(pool,'one'); await a.transport.flushNow(); await refresh(b);
+    assert.equal(a.files.has(imageUrl), false);
+    for (const d of [a,b]) {
+      assert.equal((await d.db.list(pool)).length, 0);
+      assert.equal(await d.db.get('_global_', '主角'), null);
+      assert.equal(await d.db.getMoodAvatar('_global_', '主角', 'mood-calm'), null);
+      assert.ok(await d.db.get('_global_', '另图'));
+    }
+    await b.transport._applyManifest('global',oldGlobal);
+    assert.equal(await b.db.get('_global_', '主角'), null);
+    await a.db.add(pool,'new',bytes);
+    await a.transport.flushNow(); await refresh(b);
+    assert.ok(a.files.has(imageUrl));
+    assert.ok(await b.db.get(pool,'new'));
+    assert.equal(await b.db.get('_global_','主角'),null);
   } finally { a.stop(); b.stop(); }
 });
 
@@ -402,18 +472,31 @@ test('opening an existing v8 database preserves avatar/style/font records and le
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+  const oldPoolKey = 'avatar-pool__legacy-upload';
+  const addUpload = connection.transaction('avatars','readwrite');
+  addUpload.objectStore('avatars').put({alias:oldPoolKey, syncScope:'avatar-pool',
+    imageBlob:records.avatars.imageBlob, fileName:'名字不同.png', updatedAt:1});
+  await new Promise((resolve,reject) => {addUpload.oncomplete=resolve;addUpload.onabort=reject;});
   connection.close();
   const d = await device('A', new Map(), { indexedDB });
   try {
-    assert.equal(d.db.db.version, 1);
-    assert.deepEqual([...d.db.db.objectStoreNames], Object.keys(records).sort());
+    assert.equal(d.db.db.version, 2);
+    assert.deepEqual([...d.db.db.objectStoreNames], [...Object.keys(records),'portrait_sources'].sort());
     for (const [name, expected] of Object.entries(records)) {
       const actual = await d.db._getByKey(name, expected.alias && name === 'avatars' ? expected.alias : expected.key || expected.id);
       for (const [key, value] of Object.entries(expected)) {
-        if (value instanceof Blob) assert.equal(await actual[key].text(), await value.text());
+        if (value instanceof Blob && (name === 'avatars' || name === 'mood_avatars')) {
+          assert.equal(actual.imageBlob, null);
+          assert.equal(await (await d.db.hydratePortrait(actual)).imageBlob.text(), await value.text());
+        } else if (value instanceof Blob) assert.equal(await actual[key].text(), await value.text());
         else assert.deepEqual(actual[key], value);
       }
     }
+    const assigned = await d.db._getByKey('avatars', records.avatars.alias);
+    const migratedPool = await d.db._getByKey('avatars', oldPoolKey);
+    assert.equal(migratedPool.sourceId, assigned.sourceId);
+    await d.db.delete(d.api.AVATAR_POOL_SCOPE, 'legacy-upload');
+    assert.equal(await d.db.get('_global_', 'alice'), null);
     assert.equal(await d.db.getConfig('style_avatarSize'), 120);
   } finally { d.stop(); }
 });
@@ -486,7 +569,8 @@ test('synced records export real ZIP bytes and restore on an offline device with
     assert.deepEqual(requests, [before.syncedUrl], 'same asset downloaded once for avatar and mood');
     const entries = b.api.zipExtract(await archive.arrayBuffer());
     const manifest = JSON.parse(new TextDecoder().decode(entries.get('manifest.json')));
-    assert.equal(entries.size, 3);
+    assert.equal(entries.size, 2, 'the archive contains one source image and its manifest');
+    assert.equal(manifest.avatars[0].zipPath, manifest.moodAvatars[0].zipPath);
     for (const item of [...manifest.avatars, ...manifest.moodAvatars]) {
       assert.equal('imageUrl' in item, false);
       assert.ok(item.zipPath.endsWith('.png'));
@@ -705,6 +789,6 @@ test('standalone CG imports fail before writing data', async () => {
   try {
     await assert.rejects(d.db.importFromFile(new Blob([JSON.stringify({ type: 'bubble-cg', version: '8.0', groups: [] })]), '_global_'), /无法识别的文件格式/);
     assert.deepEqual(Object.keys(await d.db.getAllConfig()), []);
-    assert.deepEqual([...d.db.db.objectStoreNames], ['avatars', 'config', 'local_fonts', 'mood_avatars']);
+    assert.deepEqual([...d.db.db.objectStoreNames], ['avatars', 'config', 'local_fonts', 'mood_avatars', 'portrait_sources']);
   } finally { d.stop(); }
 });

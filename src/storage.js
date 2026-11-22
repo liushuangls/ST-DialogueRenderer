@@ -1,14 +1,16 @@
-import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.4.3";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.4.3";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.4.3";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.4.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.3";
-import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.4.3";
+import { SOURCE_STORE, PORTRAIT_STORES, contentId, syncedImagePath, sourceIdFromUrl, requestResult, writeTransaction, dropPortraitSource, pruneUnusedSource } from "./portrait-sources.js?v=2.5.0";
+import { builtinPortraitByFile, builtinPortraitUrl } from "./avatar-pool.js?v=2.5.0";
+import { readingSettings, STYLE_DEFAULTS, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.5.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.5.0";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.5.0";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.5.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.0";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.5.0";
 
-import { POOL_LAYOUT_KEY, poolSettingNewer, validatePoolSetting } from "./pool-groups.js?v=2.4.3";
+import { POOL_LAYOUT_KEY, poolSettingNewer, validatePoolSetting } from "./pool-groups.js?v=2.5.0";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_AVATARS = 'avatars';
 const STORE_CONFIG = 'config';
 const STORE_MOOD_AVATARS = 'mood_avatars';
@@ -23,8 +25,8 @@ class AvatarDB {
   }
 
   async init() {
-    if (this.db) return this.db;
-    return new Promise((resolve, reject) => {
+    if (this.opening) return this.opening;
+    this.opening = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, DB_VERSION);
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
@@ -45,16 +47,132 @@ class AvatarDB {
           db.createObjectStore(STORE_LOCAL_FONTS, { keyPath: 'id' });
         }
 
+        if (!db.objectStoreNames.contains(SOURCE_STORE)) db.createObjectStore(SOURCE_STORE, {keyPath:'id'});
+        for (const name of PORTRAIT_STORES) {
+          const store = request.transaction.objectStore(name);
+          if (!store.indexNames.contains('sourceId')) store.createIndex('sourceId', 'sourceId');
+        }
       };
-      request.onsuccess = (event) => { this.db = event.target.result; resolve(this.db); };
+      request.onblocked = () => {
+        const message = '头像库正在升级，请刷新或关闭其他已打开的旧版酒馆标签页。';
+        console.warn('[DialogueRenderer]', message);
+        globalThis.toastr?.warning(message);
+      };
+      request.onsuccess = () => {
+        this.db = request.result;
+        this.db.onversionchange = () => { this.db.close(); this.opening = null; this.db = null; };
+        resolve(this.db);
+      };
       request.onerror = (event) => { reject(new Error(`IndexedDB 打开失败: ${event.target.error}`)); };
+    });
+    this.opening = this.opening.then(async db => {
+      await this._migratePortraitSources(db);
+      return db;
+    }).catch(error => {
+      this.db?.close(); this.db = null; this.opening = null;
+      throw error;
+    });
+    return this.opening;
+  }
+
+  async _ensureDB() { await this.init(); }
+
+  async _migratePortraitSources(db) {
+    const marker = '@migration:v2';
+    if (await this._getByKey(SOURCE_STORE, marker)) return;
+    for (const storeName of PORTRAIT_STORES) {
+      const records = await requestResult(db.transaction(storeName).objectStore(storeName).getAll());
+      const uploads = records.filter(row => row.syncScope === AVATAR_POOL_SCOPE && !row.deleted);
+      const variants = new Map();
+      for (const record of records) {
+        if (record.deleted || record.sourceId || (!record.imageBlob && !sourceIdFromUrl(record.syncedUrl))) continue;
+        let original;
+        if (storeName === STORE_AVATARS && record.syncScope !== AVATAR_POOL_SCOPE) {
+          // The old picker sometimes compressed the selected image a second time.
+          // File names narrow the search; only identical bytes establish a match.
+          const candidates = uploads.filter(row => row.fileName === record.fileName &&
+            row.width === record.width && row.height === record.height && row.fileSize >= 50 * 1024 && row.fileSize > record.fileSize);
+          const id = candidates.length && (record.imageBlob ? await contentId(record.imageBlob) : sourceIdFromUrl(record.syncedUrl));
+          for (const candidate of candidates) {
+            if (!variants.has(candidate.alias)) variants.set(candidate.alias, await this._legacyVariants(candidate));
+            if (variants.get(candidate.alias).has(id)) { original = candidate; break; }
+          }
+        }
+        await this._saveImage(storeName, record, true, original);
+      }
+    }
+    await this._put(SOURCE_STORE, {id:marker});
+  }
+
+  async _legacyVariants(record) {
+    record = await this.hydratePortrait(record);
+    const matches = new Set();
+    if (!record) return matches;
+    let bytes = record.imageBlob;
+    if (!bytes && sourceIdFromUrl(record.syncedUrl)) {
+      try { bytes = await this._resolveExportImage(record, '迁移旧头像', new Map()); }
+      catch (error) { console.warn('[DialogueRenderer] 暂时无法核对旧头像副本，将保留其原图', error); return matches; }
+    }
+    if (!bytes) return matches;
+    const quality = (await this._getByKey(STORE_CONFIG, 'style_imageCompressQuality'))?.value;
+    for (const value of new Set([STYLE_DEFAULTS.style_imageCompressQuality, quality].filter(n => Number.isFinite(n)))) {
+      const compressed = await compressImage(bytes, {enabled:true, quality:value});
+      if (compressed.size < bytes.size) matches.add(await contentId(compressed));
+    }
+    return matches;
+  }
+
+  async _saveImage(storeName, record, migrating = false, original = null) {
+    const media = original || record;
+    let id = media.sourceId || sourceIdFromUrl(media.syncedUrl);
+    if (record.builtinFile) id = 'builtin:' + builtinPortraitByFile(record.builtinFile).file;
+    else if (media.imageBlob) id = await contentId(media.imageBlob);
+    if (!id) throw new Error('缺少头像源文件');
+    const { requirePoolKey, ...binding } = record;
+    const imageBlob = media.imageBlob;
+    binding.sourceId = id;
+    binding.imageBlob = null;
+    if (original) {
+      binding.syncedUrl = original.syncedUrl;
+      binding.fileSize = original.fileSize;
+      binding.mimeType = original.mimeType;
+      binding.updatedAt = Math.max(Date.now(), (record.updatedAt || 0) + 1);
+    }
+    const stores = [SOURCE_STORE, ...PORTRAIT_STORES];
+    return writeTransaction(this.db, stores, async tx => {
+      const store = tx.objectStore(storeName);
+      const live = await requestResult(store.get(record.id || record.alias));
+      if (migrating && (!live || live.sourceId || live.deleted || live.updatedAt !== record.updatedAt)) return;
+      if (requirePoolKey) {
+        const pool = await requestResult(tx.objectStore(STORE_AVATARS).get(buildAvatarKey(AVATAR_POOL_SCOPE, requirePoolKey)));
+        if (!pool || pool.sourceId !== id || pool.deleted) throw new Error('这张池内头像已删除或改变，请重新选择');
+      }
+      const sources = tx.objectStore(SOURCE_STORE);
+      const source = await requestResult(sources.get(id));
+      if (source?.deletedAt && (record.updatedAt || 0) <= source.deletedAt) throw new Error('这张头像源图已删除');
+      const newer = Math.max(binding.updatedAt || 0, source?.updatedAt || 0);
+      if (!record.builtinFile && (!source || (imageBlob && !source.imageBlob) || newer > source.updatedAt)) {
+        sources.put({ ...source, id, updatedAt:newer, imageBlob:source?.imageBlob || imageBlob || null,
+          syncedUrl:source?.syncedUrl || binding.syncedUrl || null });
+      }
+      store.put(binding);
+      if (live?.sourceId && live.sourceId !== id && await pruneUnusedSource(tx, live.sourceId)) {
+        this._revokeCachedUrl('source:' + live.sourceId);
+      }
+      return binding;
     });
   }
 
-  async _ensureDB() { if (!this.db) await this.init(); }
+  async hydratePortrait(record) {
+    if (!record || record.deleted || !record.sourceId || record.imageBlob) return record;
+    if (record.builtinFile) return { ...record, syncedUrl:builtinPortraitUrl(builtinPortraitByFile(record.builtinFile)) };
+    const source = await this._getByKey(SOURCE_STORE, record.sourceId);
+    if (source?.deletedAt && record.updatedAt <= source.deletedAt) return null;
+    return { ...record, imageBlob:source?.imageBlob || null, syncedUrl:source?.syncedUrl || record.syncedUrl || null };
+  }
 
   _recordMatchesStorageScope(record, charId) {
-    if (!record) return false;
+    if (!record || record.deleted) return false;
     const safeCharId = String(charId == null ? '' : charId);
     if (!safeCharId) return false;
     if (safeCharId === GLOBAL_CHAR_ID) {
@@ -74,10 +192,11 @@ class AvatarDB {
     const record = {
       ...(charId === AVATAR_POOL_SCOPE && metadata.poolGroup ? { poolGroup: metadata.poolGroup } : {}),
       alias: key, imageBlob, syncScope: getAvatarSyncScopeForCharId(charId),
+      sourceId: metadata.sourceId, builtinFile: metadata.builtinFile, requirePoolKey: metadata.requirePoolKey,
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${name.trim().toLowerCase()}.jpg`,
-      fileSize: imageBlob ? imageBlob.size : 0,
+      fileSize: imageBlob ? imageBlob.size : (metadata.fileSize || 0),
       width: metadata.width || 0,
       height: metadata.height || 0,
       createdAt: Date.now(),
@@ -90,12 +209,13 @@ class AvatarDB {
     await this._ensureDB();
     const key = buildAvatarKey(charId, name);
     const record = await this._getByKey(STORE_AVATARS, key);
-    return this._recordMatchesStorageScope(record, charId) ? record : null;
+    return this._recordMatchesStorageScope(record, charId) ? this.hydratePortrait(record) : null;
   }
 
   _recordUrl(cacheKey, record) {
+    if (!record || record.deleted) return null;
+    if (record.sourceId) cacheKey = 'source:' + record.sourceId;
     if (this._blobUrlCache.has(cacheKey)) return this._blobUrlCache.get(cacheKey);
-    if (!record) return null;
     if (record.imageBlob) {
       const url = URL.createObjectURL(record.imageBlob);
       this._blobUrlCache.set(cacheKey, url);
@@ -116,16 +236,43 @@ class AvatarDB {
     if (!existing) throw new Error(`角色名 "${name}" 不存在`);
     this._revokeCachedUrl(key);
     const record = {
-      ...existing, imageBlob,
+      ...existing, imageBlob, sourceId:metadata.sourceId, builtinFile:metadata.builtinFile, requirePoolKey:metadata.requirePoolKey,
       syncedUrl: metadata.syncedUrl !== undefined ? metadata.syncedUrl : null,
       mimeType: imageBlob ? (imageBlob.type || metadata.mimeType || existing.mimeType) : (metadata.mimeType || existing.mimeType),
       fileName: metadata.fileName || existing.fileName,
-      fileSize: imageBlob ? imageBlob.size : 0,
+      fileSize: imageBlob ? imageBlob.size : (metadata.fileSize || 0),
       width: metadata.width || existing.width,
       height: metadata.height || existing.height,
       updatedAt: Date.now()
     };
     return this._put(STORE_AVATARS, record);
+  }
+
+  // Pool IDs drive automatic assignment and group moves. Only change the visible name.
+  async renamePoolUpload(uploadKey, label) {
+    const fileName = label.trim();
+    if (!fileName) throw new Error('头像名称不能为空');
+    await this._ensureDB();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(STORE_AVATARS, 'readwrite');
+      const store = tx.objectStore(STORE_AVATARS);
+      const request = store.get(buildAvatarKey(AVATAR_POOL_SCOPE, uploadKey));
+      let updated = null;
+      let failure;
+      request.onsuccess = () => {
+        const source = request.result;
+        if (!this._recordMatchesStorageScope(source, AVATAR_POOL_SCOPE)) {
+          failure = new Error('这张上传的头像已不存在');
+          tx.abort();
+          return;
+        }
+        if (source.fileName === fileName) return;
+        updated = { ...source, fileName, updatedAt:Math.max(Date.now(), (source.updatedAt || 0) + 1) };
+        store.put(updated);
+      };
+      tx.oncomplete = () => resolve(updated);
+      tx.onabort = () => reject(failure || tx.error || new Error('上传头像修改已中止'));
+    });
   }
 
   async rename(charId, oldName, newName) {
@@ -179,12 +326,32 @@ class AvatarDB {
   async delete(charId, name) {
     await this._ensureDB();
     const key = buildAvatarKey(charId, name);
-    this._revokeCachedUrl(key);
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(STORE_AVATARS, 'readwrite');
-      const req = tx.objectStore(STORE_AVATARS).delete(key);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`删除失败`));
+    if (charId === AVATAR_POOL_SCOPE) {
+      const changes = await writeTransaction(this.db, [SOURCE_STORE, ...PORTRAIT_STORES], async tx => {
+        const source = await requestResult(tx.objectStore(STORE_AVATARS).get(key));
+        if (!source || source.deleted) return [];
+        const shared = await requestResult(tx.objectStore(SOURCE_STORE).get(source.sourceId));
+        const revision = Math.max(Date.now(), (source.updatedAt || 0) + 1, (shared?.updatedAt || 0) + 1);
+        const url = shared?.syncedUrl || source.syncedUrl || syncedImagePath(source.sourceId, source.mimeType);
+        return dropPortraitSource(tx, source.sourceId, revision, url);
+      });
+      for (const {record} of changes) {
+        if (record.removedSourceId) this._revokeCachedUrl('source:' + record.removedSourceId);
+      }
+      return changes;
+    }
+    await this._removeBindings(STORE_AVATARS, [key]);
+  }
+
+  async _removeBindings(storeName, keys) {
+    await writeTransaction(this.db, [SOURCE_STORE, ...PORTRAIT_STORES], async tx => {
+      const store = tx.objectStore(storeName);
+      for (const key of keys) {
+        const record = await requestResult(store.get(key));
+        store.delete(key);
+        if (record?.sourceId && await pruneUnusedSource(tx, record.sourceId)) this._revokeCachedUrl('source:' + record.sourceId);
+        this._revokeCachedUrl(storeName === STORE_AVATARS ? key : 'mood_' + key);
+      }
     });
   }
 
@@ -236,7 +403,7 @@ class AvatarDB {
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
       fileName: metadata.fileName || `${safeName}-${moodId}.jpg`,
-      fileSize: imageBlob ? imageBlob.size : 0,
+      fileSize: imageBlob ? imageBlob.size : (metadata.fileSize || 0),
       width: metadata.width || 0,
       height: metadata.height || 0,
       createdAt: Date.now(),
@@ -249,7 +416,7 @@ class AvatarDB {
     await this._ensureDB();
     const id = buildMoodAvatarKey(charId, name, moodId);
     const record = await this._getByKey(STORE_MOOD_AVATARS, id);
-    return this._recordMatchesStorageScope(record, charId) ? record : null;
+    return this._recordMatchesStorageScope(record, charId) ? this.hydratePortrait(record) : null;
   }
 
   async getMoodAvatarBlobUrl(charId, name, moodId) {
@@ -261,7 +428,7 @@ class AvatarDB {
     await this._ensureDB();
     const safeName = name.trim().toLowerCase();
     const safeCharId = String(charId || GLOBAL_CHAR_ID);
-    return new Promise((resolve, reject) => {
+    const rows = await new Promise((resolve, reject) => {
       const tx = this.db.transaction(STORE_MOOD_AVATARS, 'readonly');
       const index = tx.objectStore(STORE_MOOD_AVATARS).index('charId');
       const req = index.getAll(IDBKeyRange.only(safeCharId));
@@ -270,41 +437,18 @@ class AvatarDB {
       };
       req.onerror = () => reject(new Error(`情绪差分列表查询失败`));
     });
+    return (await Promise.all(rows.map(record => this.hydratePortrait(record)))).filter(Boolean);
   }
 
   async deleteMoodAvatar(charId, name, moodId) {
     await this._ensureDB();
     const id = buildMoodAvatarKey(charId, name, moodId);
-    const cacheKey = 'mood_' + id;
-    if (this._blobUrlCache.has(cacheKey)) {
-      URL.revokeObjectURL(this._blobUrlCache.get(cacheKey));
-      this._blobUrlCache.delete(cacheKey);
-    }
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(STORE_MOOD_AVATARS, 'readwrite');
-      const req = tx.objectStore(STORE_MOOD_AVATARS).delete(id);
-      req.onsuccess = () => resolve();
-      req.onerror = () => reject(new Error(`情绪差分删除失败`));
-    });
+    await this._removeBindings(STORE_MOOD_AVATARS, [id]);
   }
 
   async deleteAllMoodAvatars(charId, name) {
-    await this._ensureDB();
-    const moodAvatars = await this.listMoodAvatars(charId, name);
-    const tx = this.db.transaction(STORE_MOOD_AVATARS, 'readwrite');
-    const store = tx.objectStore(STORE_MOOD_AVATARS);
-    for (const ma of moodAvatars) {
-      store.delete(ma.id);
-      const cacheKey = 'mood_' + ma.id;
-      if (this._blobUrlCache.has(cacheKey)) {
-        URL.revokeObjectURL(this._blobUrlCache.get(cacheKey));
-        this._blobUrlCache.delete(cacheKey);
-      }
-    }
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(new Error(`情绪差分批量删除失败`));
-    });
+    const moods = await this.listMoodAvatars(charId, name);
+    await this._removeBindings(STORE_MOOD_AVATARS, moods.map(mood => mood.id));
   }
 
   // -- 本地字体 CRUD --
@@ -481,6 +625,8 @@ class AvatarDB {
   // downloads 只在本次导出内去重，不写库，也不触发同步或重新压缩图片。
   async _resolveExportImage(record, label, downloads) {
     try {
+      record = await this.hydratePortrait(record);
+      if (!record) throw new Error('头像源图已删除');
       let blob = record.imageBlob;
       if (!blob) {
         const url = record.syncedUrl;
@@ -524,7 +670,7 @@ class AvatarDB {
       req.onerror = () => reject(new Error('导出失败'));
     });
     const avatars = [];
-    for (const r of allAvatars.filter(r => r.alias.startsWith(prefix))) {
+    for (const r of allAvatars.filter(r => !r.deleted && r.alias.startsWith(prefix))) {
       const name = extractDisplayName(r.alias, safeCharId);
       const imageBlob = await this._resolveExportImage(r, '头像“' + name + '”', downloads);
       const entry = {
@@ -542,7 +688,7 @@ class AvatarDB {
       req.onerror = () => reject(new Error('情绪差分导出失败'));
     });
     const moodAvatars = [];
-    for (const r of allMoodAvatars.filter(r => r.charId === safeCharId)) {
+    for (const r of allMoodAvatars.filter(r => !r.deleted && r.charId === safeCharId)) {
       const imageBlob = await this._resolveExportImage(r, '表情头像“' + r.alias + ' / ' + r.moodId + '”', downloads);
       moodAvatars.push({
         name: r.alias, moodId: r.moodId, mimeType: imageBlob.type, fileName: r.fileName,
@@ -590,6 +736,13 @@ class AvatarDB {
     const prefix = safeCharId + CHAR_ID_SEPARATOR;
     const zipFiles = [];
     const downloads = new Map();
+    const packed = new Map();
+    const packImage = async (record, blob, path) => {
+      if (packed.has(record.sourceId)) return packed.get(record.sourceId);
+      zipFiles.push({name:path, data:new Uint8Array(await blob.arrayBuffer())});
+      if (record.sourceId) packed.set(record.sourceId, path);
+      return path;
+    };
 
     // - 头像 -
     const allAvatars = await new Promise((resolve, reject) => {
@@ -599,7 +752,7 @@ class AvatarDB {
     });
     const avatarsMeta = [];
     let avatarIdx = 0;
-    for (const r of allAvatars.filter(r => r.alias.startsWith(prefix))) {
+    for (const r of allAvatars.filter(r => !r.deleted && r.alias.startsWith(prefix))) {
       const displayName = extractDisplayName(r.alias, safeCharId);
       const imageBlob = await this._resolveExportImage(r, '头像“' + displayName + '”', downloads);
       const meta = {
@@ -610,9 +763,7 @@ class AvatarDB {
       };
       const ext = mimeToExt(imageBlob.type);
       const zipPath = `avatars/${avatarIdx}_${safeFileName(displayName)}${ext}`;
-      const buf = await imageBlob.arrayBuffer();
-      zipFiles.push({ name: zipPath, data: new Uint8Array(buf) });
-      meta.zipPath = zipPath;
+      meta.zipPath = await packImage(r, imageBlob, zipPath);
       avatarsMeta.push(meta);
       avatarIdx++;
     }
@@ -625,7 +776,7 @@ class AvatarDB {
     });
     const moodAvatarsMeta = [];
     let moodIdx = 0;
-    for (const r of allMoodAvatars.filter(r => r.charId === safeCharId)) {
+    for (const r of allMoodAvatars.filter(r => !r.deleted && r.charId === safeCharId)) {
       const imageBlob = await this._resolveExportImage(r, '表情头像“' + r.alias + ' / ' + r.moodId + '”', downloads);
       const meta = {
         name: r.alias, moodId: r.moodId, mimeType: imageBlob.type, fileName: r.fileName,
@@ -635,9 +786,7 @@ class AvatarDB {
       };
       const ext = mimeToExt(imageBlob.type);
       const zipPath = `mood/${moodIdx}_${safeFileName(r.alias)}_${r.moodId}${ext}`;
-      const buf = await imageBlob.arrayBuffer();
-      zipFiles.push({ name: zipPath, data: new Uint8Array(buf) });
-      meta.zipPath = zipPath;
+      meta.zipPath = await packImage(r, imageBlob, zipPath);
       moodAvatarsMeta.push(meta);
       moodIdx++;
     }
@@ -935,7 +1084,7 @@ class AvatarDB {
   async clearAll() {
     await this._ensureDB();
     this.revokeAllUrls();
-    const stores = [STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS];
+    const stores = [STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, SOURCE_STORE];
     if (this.db.objectStoreNames.contains(STORE_LOCAL_FONTS)) stores.push(STORE_LOCAL_FONTS);
     const tx = this.db.transaction(stores, 'readwrite');
     for (const s of stores) tx.objectStore(s).clear();
@@ -951,6 +1100,7 @@ class AvatarDB {
   // -- 内部工具 --
 
   _put(storeName, record) {
+    if (PORTRAIT_STORES.includes(storeName) && !record.deleted) return this._saveImage(storeName, record);
     return new Promise((resolve, reject) => {
       const req = this.db.transaction(storeName, 'readwrite').objectStore(storeName).put(record);
       req.onsuccess = () => resolve();

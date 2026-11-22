@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.4.3";
-import { AvatarDB } from "../src/storage.js?v=2.4.3";
-import { buildColorConfigKey } from "../src/context.js?v=2.4.3";
+import { createExtension } from "../src/extension.js?v=2.5.0";
+import { AvatarDB } from "../src/storage.js?v=2.5.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.5.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -263,13 +263,32 @@ try {
   input.files = transfer.files;
   input.dispatchEvent(new Event('change', {bubbles:true}));
   await until(() => section(groupId).querySelector('[data-id^="upload:"]'));
-  section(groupId).querySelector('[data-id^="upload:"]').click(); await until(() => manager.pendingFile && !poolPicker.open);
+  const uploadId = section(groupId).querySelector('[data-id^="upload:"]').dataset.id;
+  const uploadedTile = () => section(groupId).querySelector('[data-id="' + uploadId + '"]');
+  const editUploaded = () => uploadedTile().parentElement.querySelector('button[aria-label]').click();
+  const uploadForm = () => section(groupId).querySelector('.bam-upload-editor');
+  editUploaded();
+  uploadForm().querySelector('input').value = '池内新名';
+  uploadForm().requestSubmit();
+  await until(() => uploadedTile()?.title === '池内新名');
+  uploadedTile().click(); await until(() => manager.pendingFile && !poolPicker.open);
   document.getElementById('bam-alias-input').value = '池内选用';
   document.getElementById('bam-btn-confirm-upload').click();
   await until(() => document.querySelector('.bam-avatar-item[data-name="池内选用"]'));
   const savedPoolAvatar = await db.get(manager._getActiveCharId(), '池内选用');
-  check(savedPoolAvatar.imageBlob?.size === originalPortrait.size, 'pool assignment must carry a portable image');
+  check(savedPoolAvatar.sourceId === (await db.get('avatar-pool', uploadId.slice(7))).sourceId, 'pool assignment must share its upload source');
   poolPicker.open = true; await tick();
+  editUploaded();
+  const confirmDelete = window.confirm;
+  try {
+    window.confirm = () => false;
+    uploadForm().querySelector('.bam-upload-delete').click();
+    check(uploadedTile(), 'cancelled delete removed a pool upload');
+    window.confirm = () => true;
+    uploadForm().querySelector('.bam-upload-delete').click();
+    await until(() => !uploadedTile());
+  } finally { window.confirm = confirmDelete; }
+  check(await db.get(manager._getActiveCharId(), '池内选用') === null, 'deleting the source left a role assignment');
   poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
   editor.querySelector('select').value = groupId;
   editor.querySelector('select').dispatchEvent(new Event('change'));
@@ -277,11 +296,11 @@ try {
   try {
     window.confirm = () => true;
     editor.querySelector('[data-edit=delete]').click();
-    await until(() => !section(groupId) && section('ungrouped')?.querySelectorAll('button[data-id]').length === 2);
+    await until(() => !section(groupId) && section('ungrouped')?.querySelectorAll('button[data-id]').length === 1);
   } finally { window.confirm = originalConfirm; }
   manager.close(); await app.refresh(); await tick();
-  check(story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img')?.src.startsWith('blob:'), 'manual pool assignment did not override automatic selection');
-  passes.push('PASS 八批共 80 张透明头像；分组新建、改名、排序、移动头像、定向上传及选用生效');
+  check(story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img')?.src.includes('/anime01.webp'), 'manual built-in assignment did not override automatic selection');
+  passes.push('PASS 八批共 80 张透明头像；分组新建、改名、排序、移动头像、定向上传、选用、头像改名及删除生效');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

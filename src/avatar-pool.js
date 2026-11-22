@@ -1,6 +1,6 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.3";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.5.0";
 
-import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.4.3";
+import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.5.0";
 
 const series = [
   ['simple', 's', ['灰紫', '青绿', '陶红', '草绿', '藤紫', '琥珀', '赭石', '玫瑰', '靛蓝', '湖蓝']],
@@ -58,6 +58,12 @@ export function pickPoolAvatar(pool, card, name) {
   }
   if (!best) throw new Error('头像池为空');
   return best;
+}
+
+export function builtinPortraitByFile(file) {
+  const item = BUILTIN_PORTRAITS.find(portrait => portrait.file === file);
+  if (!item) throw new Error('找不到内置头像：' + file);
+  return item;
 }
 
 export function builtinPortraitUrl(item) {

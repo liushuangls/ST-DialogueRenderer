@@ -1,11 +1,11 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.4.3";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.4.3";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.4.3";
-import { STORE_AVATARS } from "./storage.js?v=2.4.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.3";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.4.3";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.5.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.5.0";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.5.0";
+import { STORE_AVATARS } from "./storage.js?v=2.5.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.5.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.5.0";
 
-import { bindPoolPicker } from "./pool-picker.js?v=2.4.3";
+import { bindPoolPicker } from "./pool-picker.js?v=2.5.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -1104,9 +1104,12 @@ class AvatarManagerPanel {
     });
 
     const openPool = bindPoolPicker($('#bam-pool'), this.db, {
-      selectFile: (file, name) => this._handleFileSelected(file, name),
+      selectFile: (file, name, item) => this._handleFileSelected(file, name, item),
       imageMeta: file => this._getImageMeta(file),
-      changed: () => this._requestAvatarAssetPreviewRefresh(),
+      changed: () => {
+        this._requestAvatarAssetPreviewRefresh();
+        this._refreshList().catch(this.onError);
+      },
     });
 
     $('#bam-upload-area').addEventListener('click', () => $('#bam-file-input').click());
@@ -1249,10 +1252,11 @@ class AvatarManagerPanel {
 
   // -- 文件处理 --
 
-  _handleFileSelected(file, name) {
+  _handleFileSelected(file, name, poolItem = null) {
     if (file.size > 2 * 1024 * 1024) { alert('图片不能超过 2MB'); return; }
     if (!file.type.startsWith('image/')) { alert('请选择图片文件'); return; }
     this.pendingFile = file;
+    this.pendingPoolItem = poolItem;
     const doc = this._getMainDocument();
     const reader = new FileReader();
     reader.onload = e => { if (this.isOpen && this.pendingFile === file) doc.getElementById('bam-preview-img').src = e.target.result; };
@@ -1276,6 +1280,7 @@ class AvatarManagerPanel {
 
   async _confirmUpload() {
     const file = this.pendingFile;
+    const poolItem = this.pendingPoolItem;
     if (!file) return;
     const doc = this._getMainDocument();
     const name = doc.getElementById('bam-alias-input').value.trim();
@@ -1292,7 +1297,18 @@ class AvatarManagerPanel {
       if (exists && !confirm(`角色名 "${name}" 已存在，是否替换图片和颜色？`)) return;
       const meta = await this._getImageMeta(file);
       if (!meta.width) throw new Error('图片无法解码');
-      const blob = await compressImage(file, await getCompressOptions(this.db));
+      let blob = null;
+      if (poolItem?.uploadKey) {
+        const source = await this.db.get(AVATAR_POOL_SCOPE, poolItem.uploadKey);
+        if (!source) throw new Error('这张池内头像已删除，请重新选择');
+        Object.assign(meta, {sourceId:source.sourceId, syncedUrl:source.syncedUrl, requirePoolKey:poolItem.uploadKey});
+      } else if (poolItem) {
+        meta.builtinFile = poolItem.file;
+      } else {
+        blob = await compressImage(file, await getCompressOptions(this.db));
+      }
+      meta.fileSize = blob?.size ?? file.size;
+      meta.mimeType = file.type;
       if (exists) await this.db.update(charId, name, blob, meta);
       else await this.db.add(charId, name, blob, meta);
       await this.db.setConfig(buildColorConfigKey(charId, name), color);

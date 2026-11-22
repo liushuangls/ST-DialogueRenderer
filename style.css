@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.4.3');
-@import url('./src/reading-fonts.css?v=2.4.3');
+@import url('./src/bubble-style.css?v=2.5.0');
+@import url('./src/reading-fonts.css?v=2.5.0');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -129,4 +129,11 @@
 #bam-panel .bam-group-input input { min-width:0; flex:1 }
 #bam-panel .bam-pool button:disabled { opacity:.45; cursor:default }
 #bam-panel .bam-pool-grid button[aria-pressed="true"] { border-color:#a7bbff; background:#35446a }
+#bam-panel .bam-upload-tile { display:flex; flex-direction:column; min-width:0 }
+#bam-panel .bam-upload-tile > button:last-child { min-height:32px; font-size:12px }
+#bam-panel .bam-upload-editor { grid-column:1 / -1; min-width:0; display:grid; gap:8px; margin:0; padding:8px; border:1px solid #ffffff29; border-radius:6px }
+#bam-panel .bam-upload-editor label { display:grid; gap:4px; font-size:12px }
+#bam-panel .bam-upload-editor input { box-sizing:border-box; width:100%; min-width:0; padding:5px 8px; font:inherit; font-size:16px }
+#bam-panel .bam-upload-editor button { min-height:36px }
+#bam-panel .bam-upload-editor .bam-upload-delete { color:#ffb8b0 }
 #bam-panel .bam-pool-grid h4 { grid-column:1 / -1; margin:6px 2px 0; font-size:12px; font-weight:600; color:#bac5de }
