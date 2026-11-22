@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.4.2";
-import { AvatarDB } from "../src/storage.js?v=2.4.2";
-import { buildColorConfigKey } from "../src/context.js?v=2.4.2";
+import { createExtension } from "../src/extension.js?v=2.4.3";
+import { AvatarDB } from "../src/storage.js?v=2.4.3";
+import { buildColorConfigKey } from "../src/context.js?v=2.4.3";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -219,23 +219,21 @@ try {
     throw new Error('avatar picker did not reach the expected state: ' + poolPicker.querySelector('[role=status]').textContent);
   };
   const section = id => poolPicker.querySelector('[data-group="' + id + '"]');
-  await until(() => poolPicker.querySelectorAll('button[data-id]').length === 104);
+  await until(() => poolPicker.querySelectorAll('button[data-id]').length === 90);
   check([...poolPicker.querySelectorAll('[data-group]')].map(el=>el.dataset.group).join() === 'simple,anime,ghibli,jrpg,real', 'group order');
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 160;
   const ctx = canvas.getContext('2d',{willReadFrequently:true});
-  const realHeadings = [...section('real').querySelectorAll('h4')].map(el => el.textContent);
-  check(realHeadings.join() === '明星,成人演员', 'real portrait categories');
-  for (const [groupId, expectedCount] of Object.entries({anime:50, ghibli:20, jrpg:10, real:14})) {
+  for (const groupId of ['anime','ghibli','jrpg']) {
     const images = section(groupId).querySelectorAll('img');
-    check(images.length === expectedCount, 'portrait count for '+groupId);
+    check(images.length === {anime:50, ghibli:20, jrpg:10}[groupId], 'portrait count for '+groupId);
     for (const img of images) {
       img.loading = 'eager'; await img.decode(); ctx.clearRect(0,0,160,160); ctx.drawImage(img,0,0,160,160);
       check(ctx.getImageData(0,0,1,1).data[3] === 0 && ctx.getImageData(80,80,1,1).data[3] > 200, 'transparent portrait: '+img.src);
     }
   }
-  section('real').open = true;
-  const firstPortrait = section('real').querySelector('[data-id="celebrity01.webp"]');
+  section('anime').open = true;
+  const firstPortrait = section('anime').querySelector('[data-id="anime01.webp"]');
   const originalPortrait = await (await fetch(firstPortrait.querySelector('img').src)).blob();
   firstPortrait.click(); await until(() => manager.pendingFile && !poolPicker.open);
   document.getElementById('bam-alias-input').value = '茶馆老板娘';
@@ -283,7 +281,7 @@ try {
   } finally { window.confirm = originalConfirm; }
   manager.close(); await app.refresh(); await tick();
   check(story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img')?.src.startsWith('blob:'), 'manual pool assignment did not override automatic selection');
-  passes.push('PASS 80 张插画和 14 张写实头像均为透明底；分组新建、改名、排序、移动头像、定向上传及选用生效');
+  passes.push('PASS 八批共 80 张透明头像；分组新建、改名、排序、移动头像、定向上传及选用生效');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

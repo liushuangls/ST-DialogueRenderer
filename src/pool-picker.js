@@ -1,7 +1,7 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.2";
-import { groupedAvatarPool, poolPortraitUrl } from "./avatar-pool.js?v=2.4.2";
-import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.4.2";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.2";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.4.3";
+import { groupedAvatarPool, poolPortraitUrl } from "./avatar-pool.js?v=2.4.3";
+import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.4.3";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.3";
 
 function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
@@ -69,7 +69,7 @@ export function bindPoolPicker(details, db, { selectFile, imageMeta, changed }) 
       const tiles = await Promise.all(g.items.map(async item => {
         const tile = button(undefined);
         tile.dataset.id = item.id;
-        tile.title = item.file && item.group === 'real' ? item.label + ' · AI 生成肖像' : item.label;
+        tile.title = item.label;
         if (!editor.hidden) tile.setAttribute('aria-pressed', String(selected.has(item.id)));
         const image = node('img');
         image.alt = ''; image.loading = 'lazy';
