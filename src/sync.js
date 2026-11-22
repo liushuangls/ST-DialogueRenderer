@@ -1,7 +1,9 @@
-import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.3.0";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, storageCharIdFromSyncScope, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext } from "./context.js?v=2.3.0";
-import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.3.0";
-import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.3.0";
+import { STYLE_DEFAULTS, STYLE_CONFIG_KEYS, writeStyleSnapshot } from "./config.js?v=2.4.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, storageCharIdFromSyncScope, getCurrentCharacterSyncScope, getAvatarSyncScopeForCharId, getCurrentContext } from "./context.js?v=2.4.0";
+import { STORE_AVATARS, STORE_CONFIG, STORE_MOOD_AVATARS, STORE_LOCAL_FONTS } from "./storage.js?v=2.4.0";
+import { LOCAL_FONT_MAX_SIZE } from "./fonts.js?v=2.4.0";
+
+import { POOL_LAYOUT_KEY, poolSettingNewer } from "./pool-groups.js?v=2.4.0";
 
 const AVATAR_SYNC_SCHEMA = 'bubble-dialogue-avatar-v8';
 const AVATAR_SYNC_PREFIX = 'bdv8';
@@ -128,13 +130,25 @@ class AvatarSync {
       return result;
     };
 
+    const originalEditLayout = db.editPoolLayout.bind(db);
+    db.editPoolLayout = async (...args) => {
+      const changes = await originalEditLayout(...args);
+      for (const entry of changes) this._queue(AVATAR_POOL_SCOPE, { ...entry, kind: 'pool-setting' });
+      return changes;
+    };
+
     const originalClearAll = db.clearAll.bind(db);
     db.clearAll = async () => {
       const records = [
         ...(await this._listAll(STORE_AVATARS)),
         ...(await this._listAll(STORE_MOOD_AVATARS)),
       ];
+      const layout = await db.getConfig(POOL_LAYOUT_KEY, {});
       const result = await originalClearAll();
+      if (Object.keys(layout).length) {
+        await db.editPoolLayout(() => Object.fromEntries(Object.keys(layout).map(key => [key, null])),
+          Math.max(...Object.values(layout).map(entry => entry.updatedAt)));
+      }
       for (const record of records) {
         const storeName = record.id ? STORE_MOOD_AVATARS : STORE_AVATARS;
         this._queueDelete(storeName, this._recordIdentity(storeName, record));
@@ -344,6 +358,7 @@ class AvatarSync {
   }
 
   async _prepareEntry(scope, change) {
+    if (scope === AVATAR_POOL_SCOPE && change.kind === 'pool-setting') return { ...change, scope };
     const base = {
       id: change.id,
       kind: change.kind,
@@ -371,6 +386,7 @@ class AvatarSync {
       ...base,
       deleted: false,
       assetUrl,
+      ...(scope === AVATAR_POOL_SCOPE && record.poolGroup ? { poolGroup: record.poolGroup } : {}),
       mimeType: /^image\//i.test(String(record.mimeType || '')) ? record.mimeType : 'image/webp',
       fileName: String(record.fileName || ''),
       fileSize: Number(record.fileSize) || (record.imageBlob?.size || 0),
@@ -472,6 +488,7 @@ class AvatarSync {
     const syncedUrl = this._safeAssetUrl(entry.assetUrl);
     if (!syncedUrl) throw new Error('头像“' + entry.name + '”缺少有效的同步图片，请重新上传');
     const common = {
+      ...(localCharId === AVATAR_POOL_SCOPE && typeof entry.poolGroup === 'string' ? { poolGroup: entry.poolGroup } : {}),
       imageBlob: null,
       syncedUrl,
       syncScope: entry.scope,
@@ -508,6 +525,11 @@ class AvatarSync {
     const localCharId = scope === 'global' || scope === AVATAR_POOL_SCOPE || scope === currentScope ? storageCharIdFromSyncScope(scope) : '';
     if (!localCharId) return;
 
+    if (scope === AVATAR_POOL_SCOPE) {
+      const layout = Object.entries(manifest.entries).filter(([, entry]) => entry?.kind === 'pool-setting');
+      if (layout.some(([id, entry]) => id !== entry.id || entry.scope !== scope)) throw new Error('头像池分组清单标识不匹配');
+      if (layout.length) await this.db.mergePoolLayout(layout.map(([, entry]) => entry));
+    }
     const avatarRecords = await this._listAll(STORE_AVATARS);
     const moodRecords = await this._listAll(STORE_MOOD_AVATARS);
     const localById = new Map();
@@ -559,6 +581,12 @@ class AvatarSync {
   }
 
   async _queueNewerLocalRecords(scope, manifest) {
+    if (scope === AVATAR_POOL_SCOPE) {
+      const layout = await this.db.getConfig(POOL_LAYOUT_KEY, {});
+      for (const entry of Object.values(layout)) {
+        if (poolSettingNewer(entry, manifest.entries[entry.id])) this._queue(scope, { ...entry, kind: 'pool-setting' });
+      }
+    }
     const records = [
       ...(await this._listAll(STORE_AVATARS)).map((record) => [STORE_AVATARS, record]),
       ...(await this._listAll(STORE_MOOD_AVATARS)).map((record) => [STORE_MOOD_AVATARS, record]),

@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.3.0";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.3.0";
-import { createExtension } from "../src/extension.js?v=2.3.0";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.3.0";
+import { AvatarDB } from "../src/storage.js?v=2.4.0";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.4.0";
+import { createExtension } from "../src/extension.js?v=2.4.0";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.4.0";
 
-import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.3.0";
-import { BUILTIN_PORTRAITS, listAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.3.0";
+import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.4.0";
+import { BUILTIN_PORTRAITS, listAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.4.0";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -47,7 +47,7 @@ test('the avatar pool is keyed by card and speaker; explicit and mood images tak
     await f.app.refresh();
     const otherCard = card + 'b';
     const pool = await listAvatarPool(f.db);
-    assert.deepEqual(['男性像素', '女性像素', '多色小人'].map(group => BUILTIN_PORTRAITS.filter(item => item.group === group).length), [5,15,10]);
+    assert.deepEqual(['simple','anime','ghibli','jrpg','real'].map(group => BUILTIN_PORTRAITS.filter(item => item.group === group).length), [10,50,20,10,0]);
     const names = Array.from({length:300}, (_,i) => '人物' + i);
     assert.ok(names.some(name => pickPoolAvatar(pool, card, name).id !== pickPoolAvatar(pool, otherCard, name).id));
     const name = names.find(name => pickPoolAvatar(pool, card, name).uploadKey === 'custom');

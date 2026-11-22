@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDialogueLine, buildDefaultPrompt, buildInjectionPrompt } from "../src/protocol.js?v=2.3.0";
-import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "../src/config.js?v=2.3.0";
+import { parseDialogueLine, buildDefaultPrompt, buildInjectionPrompt } from "../src/protocol.js?v=2.4.0";
+import { DEFAULT_MOOD_GROUPS, normalizeMoodConfig } from "../src/config.js?v=2.4.0";
 
 test('explicit types use only two separators and preserve body offsets, punctuation and Markdown', () => {
   const line = '  @say: Alice | 平静 |  _请按 [Enter]_ 或选择 A | B。  ';

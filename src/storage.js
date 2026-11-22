@@ -1,9 +1,11 @@
-import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.3.0";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.3.0";
-import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.3.0";
-import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.3.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.3.0";
-import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.3.0";
+import { readingSettings, STYLE_CONFIG_KEYS, normalizeMoodConfig, writeStyleSnapshot, clearStyleSnapshot } from "./config.js?v=2.4.0";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, buildAvatarKey, buildMoodAvatarKey, buildColorConfigKey, extractDisplayName, getAvatarSyncScopeForCharId, getCurrentCharName } from "./context.js?v=2.4.0";
+import { FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.4.0";
+import { zipCreate, zipExtract, mimeToExt, extToMime, safeFileName } from "./zip.js?v=2.4.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.0";
+import { PROTOCOL_VERSION, PROMPT_TEMPLATE_KEY, loadPromptSettings, validatePromptTemplate } from "./protocol.js?v=2.4.0";
+
+import { POOL_LAYOUT_KEY, poolSettingNewer, validatePoolSetting } from "./pool-groups.js?v=2.4.0";
 
 const DB_NAME = 'BubbleDialogueAvatarsV8';
 const DB_VERSION = 1;
@@ -70,6 +72,7 @@ class AvatarDB {
     const existing = await this.get(charId, name);
     if (existing) throw new Error(`角色名 "${name}" 已存在，请使用 update() 或换一个角色名`);
     const record = {
+      ...(charId === AVATAR_POOL_SCOPE && metadata.poolGroup ? { poolGroup: metadata.poolGroup } : {}),
       alias: key, imageBlob, syncScope: getAvatarSyncScopeForCharId(charId),
       syncedUrl: metadata.syncedUrl || null,
       mimeType: imageBlob ? (imageBlob.type || 'image/jpeg') : (metadata.mimeType || 'image/webp'),
@@ -196,7 +199,7 @@ class AvatarDB {
         const records = req.result.filter(r => this._recordMatchesStorageScope(r, safeCharId));
         resolve(records.map(r => ({
           alias: r.alias, displayName: extractDisplayName(r.alias, safeCharId),
-          mimeType: r.mimeType, fileName: r.fileName,
+          poolGroup: r.poolGroup, mimeType: r.mimeType, fileName: r.fileName,
           fileSize: r.fileSize, width: r.width, height: r.height,
           createdAt: r.createdAt, updatedAt: r.updatedAt
         })));
@@ -392,6 +395,48 @@ class AvatarDB {
       writeStyleSnapshot({ [key]: value });
     }
     return result;
+  }
+
+  async _mutatePoolLayout(update) {
+    await this._ensureDB();
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(STORE_CONFIG, 'readwrite');
+      const store = tx.objectStore(STORE_CONFIG);
+      let changes;
+      let failure;
+      const request = store.get(POOL_LAYOUT_KEY);
+      request.onsuccess = () => {
+        try {
+          const current = request.result?.value || {};
+          changes = update(current);
+          if (changes.length) {
+            for (const entry of changes) current[entry.id] = entry;
+            store.put({ key: POOL_LAYOUT_KEY, value: current });
+          }
+        } catch (error) { failure = error; tx.abort(); }
+      };
+      tx.oncomplete = () => resolve(changes);
+      tx.onabort = () => reject(failure || tx.error || new Error('头像池分组保存已中止'));
+    });
+  }
+
+  editPoolLayout(edit, minRevision = 0) {
+    return this._mutatePoolLayout(current => {
+      const updatedAt = Math.max(Date.now(), minRevision + 1, ...Object.values(current).map(entry => entry.updatedAt + 1));
+      const writer = Array.from(crypto.getRandomValues(new Uint8Array(12)), n => n.toString(16).padStart(2, '0')).join('');
+      return Object.entries(edit(current)).map(([id, value]) => {
+        validatePoolSetting(id, value);
+        return { id, value, updatedAt, writer };
+      });
+    });
+  }
+
+  mergePoolLayout(entries) {
+    return this._mutatePoolLayout(current => entries.filter(entry => {
+      validatePoolSetting(entry.id, entry.value);
+      if (!Number.isSafeInteger(entry.updatedAt) || entry.updatedAt < 0 || typeof entry.writer !== 'string') throw new Error('头像池分组修订无效');
+      return poolSettingNewer(entry, current[entry.id]);
+    }).map(({id, value, updatedAt, writer}) => ({id, value, updatedAt, writer})));
   }
 
   async getAllConfig() {

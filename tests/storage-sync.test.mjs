@@ -36,7 +36,7 @@ async function device(writer, files = new Map(), options = {}) {
     return modules.get(id);
   };
   const api = {};
-  for (const name of ['config', 'context', 'protocol', 'storage', 'sync', 'manager-panel', 'zip']) {
+  for (const name of ['config', 'context', 'protocol', 'storage', 'sync', 'pool-groups', 'avatar-pool', 'manager-panel', 'zip']) {
     const module = moduleFor(new URL(`../src/${name}.js?v=${version}`, import.meta.url));
     if (module.status === 'unlinked') await module.link((specifier, ref) => moduleFor(new URL(specifier, ref.identifier)));
     if (module.status === 'linked') await module.evaluate();
@@ -88,6 +88,37 @@ test('uploaded pool portraits synchronize across devices independently of charac
     assert.equal(rows[0].fileName, '青发.png');
     assert.match(await b.db.getBlobUrl(pool, rows[0].displayName), /^\/user\/files\/bdv8_/);
     assert.equal((await b.db.list('_global_')).length, 0);
+  } finally { a.stop(); b.stop(); }
+});
+
+test('pool groups, upload destinations and individual moves merge offline and survive renaming, reordering and deletion', async () => {
+  const a = await device('groups-A');
+  const b = await device('groups-B', a.files);
+  const change = (d, action, id, arg) => d.db.editPoolLayout(s => d.api.groupEdits(s, action, id, arg));
+  const reload = d => d.transport.refreshCurrentScope({force:true});
+  const rows = d => d.api.groupedAvatarPool(d.db);
+  try {
+    await change(a, 'create', 'custom-a', '手绘');
+    await change(b, 'create', 'custom-b', '旧照片');
+    await a.db.add(a.api.AVATAR_POOL_SCOPE, 'new', new Blob(['data'], {type:'image/png'}), {fileName:'手绘.png',poolGroup:'custom-a'});
+    await a.db.add(a.api.AVATAR_POOL_SCOPE, 'legacy', new Blob(['old'], {type:'image/png'}), {fileName:'旧图.png'});
+    await a.transport.flushNow(); await reload(b); await reload(a);
+    let groups = await rows(b);
+    assert.ok(groups.find(g => g.id === 'custom-a').items.some(i => i.uploadKey === 'new'));
+    assert.ok(groups.find(g => g.id === 'ungrouped').items.some(i => i.uploadKey === 'legacy'));
+    assert.ok((await rows(a)).some(g => g.id === 'custom-b'));
+    await change(b, 'rename', 'real', '人像摄影');
+    await change(b, 'up', 'real');
+    await b.db.editPoolLayout(() => ({'item:anime01.webp':'custom-a'}));
+    await b.transport.flushNow(); await reload(a);
+    groups = await rows(a);
+    assert.equal(groups.find(g => g.id === 'real').name, '人像摄影');
+    assert.ok(groups.findIndex(g => g.id === 'real') < groups.findIndex(g => g.id === 'jrpg'));
+    assert.ok(groups.find(g => g.id === 'custom-a').items.some(item => item.id === 'anime01.webp'));
+    await change(a, 'delete', 'custom-a'); await a.transport.flushNow(); await reload(b);
+    groups = await rows(b);
+    assert.ok(!groups.some(g => g.id === 'custom-a'));
+    assert.equal(groups.find(g => g.id === 'ungrouped').items.length, 3);
   } finally { a.stop(); b.stop(); }
 });
 

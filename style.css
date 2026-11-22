@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.3.0');
-@import url('./src/reading-fonts.css?v=2.3.0');
+@import url('./src/bubble-style.css?v=2.4.0');
+@import url('./src/reading-fonts.css?v=2.4.0');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -115,3 +115,18 @@
 #bam-panel .bam-pool-grid img { display:block; width:100%; aspect-ratio:1; object-fit:cover; border-radius:3px }
 #bam-panel .bam-pool-grid span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px }
 #bam-panel .bam-pool [role=status]:not(:empty) { margin:6px 0; overflow-wrap:anywhere }
+
+#bam-panel .bam-pool-sections { max-height:42vh; overflow:auto; overscroll-behavior:contain }
+#bam-panel .bam-pool-group { margin-bottom:3px; border-top:1px solid #ffffff22 }
+#bam-panel .bam-pool-group > summary { padding:8px 4px; color:#eee }
+#bam-panel .bam-pool-group > summary small { margin-left:6px; color:#aaa; font-size:11px }
+#bam-panel .bam-pool-group .bam-pool-grid { max-height:none; overflow:visible }
+#bam-panel .bam-pool-group .bam-pool-upload { margin:0 0 6px 3px }
+#bam-panel .bam-pool button:not([data-id]), #bam-panel .bam-group-editor :is(select,input) { padding:5px 8px; border:1px solid #ffffff29; border-radius:6px; color:#eee; background:#313238 }
+#bam-panel .bam-group-editor[hidden] { display:none }
+#bam-panel .bam-group-editor { display:grid; gap:6px; padding:6px 0 10px }
+#bam-panel .bam-group-input, #bam-panel .bam-group-actions { display:flex; gap:5px }
+#bam-panel .bam-group-input input { min-width:0; flex:1 }
+#bam-panel .bam-pool button:disabled { opacity:.45; cursor:default }
+#bam-panel .bam-pool-grid button[aria-pressed="true"] { border-color:#a7bbff; background:#35446a }
+#bam-panel .bam-pool-grid h4 { grid-column:1 / -1; margin:6px 2px 0; font-size:12px; font-weight:600; color:#bac5de }

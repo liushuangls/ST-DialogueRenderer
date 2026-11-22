@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.3.0";
-import { AvatarDB } from "../src/storage.js?v=2.3.0";
-import { buildColorConfigKey } from "../src/context.js?v=2.3.0";
+import { createExtension } from "../src/extension.js?v=2.4.0";
+import { AvatarDB } from "../src/storage.js?v=2.4.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.4.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -214,34 +214,74 @@ try {
   await app.openManager();
   const poolPicker = document.getElementById('bam-pool');
   poolPicker.open = true; await tick();
-  const poolGrid = poolPicker.querySelector('.bam-pool-grid');
   const until = async predicate => {
     for (let i = 0; i < 45; i++) { if (predicate()) return; await tick(); }
     throw new Error('avatar picker did not reach the expected state: ' + poolPicker.querySelector('[role=status]').textContent);
   };
-  await until(() => poolGrid.children.length === 30);
-  await Promise.all([...poolGrid.querySelectorAll('img')].map(image => image.decode()));
-  const firstPortrait = poolGrid.querySelector('[data-id="m01.webp"]');
+  const section = id => poolPicker.querySelector('[data-group="' + id + '"]');
+  await until(() => poolPicker.querySelectorAll('button[data-id]').length === 90);
+  check([...poolPicker.querySelectorAll('[data-group]')].map(el=>el.dataset.group).join() === 'simple,anime,ghibli,jrpg,real', 'group order');
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 160;
+  const ctx = canvas.getContext('2d',{willReadFrequently:true});
+  for (const groupId of ['anime','ghibli','jrpg']) {
+    const images = section(groupId).querySelectorAll('img');
+    check(images.length === {anime:50, ghibli:20, jrpg:10}[groupId], 'portrait count for '+groupId);
+    for (const img of images) {
+      img.loading = 'eager'; await img.decode(); ctx.clearRect(0,0,160,160); ctx.drawImage(img,0,0,160,160);
+      check(ctx.getImageData(0,0,1,1).data[3] === 0 && ctx.getImageData(80,80,1,1).data[3] > 200, 'transparent portrait: '+img.src);
+    }
+  }
+  section('anime').open = true;
+  const firstPortrait = section('anime').querySelector('[data-id="anime01.webp"]');
   const originalPortrait = await (await fetch(firstPortrait.querySelector('img').src)).blob();
   firstPortrait.click(); await until(() => manager.pendingFile && !poolPicker.open);
   document.getElementById('bam-alias-input').value = '茶馆老板娘';
   document.getElementById('bam-btn-confirm-upload').click();
   await until(() => document.querySelector('.bam-avatar-item[data-name="茶馆老板娘"]'));
+  poolPicker.open = true; await tick();
+  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
+  const editor = poolPicker.querySelector('.bam-group-editor');
+  editor.querySelector('input').value = '我的画集';
+  editor.querySelector('[data-edit=create]').click();
+  await until(() => editor.querySelector('select').value.startsWith('custom-'));
+  const groupId = editor.querySelector('select').value;
+  editor.querySelector('input').value = '水彩';
+  editor.querySelector('[data-edit=rename]').click();
+  await until(() => section(groupId).querySelector('summary').textContent.includes('水彩'));
+  editor.querySelector('[data-edit=up]').click();
+  await until(()=>section(groupId).nextElementSibling?.dataset.group === 'real');
+  section('ghibli').querySelector('[data-id="ghibli01.webp"]').click();
+  editor.querySelector('[data-edit=move]').click();
+  await until(()=>section(groupId).querySelector('[data-id="ghibli01.webp"]'));
+  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
   const input = poolPicker.querySelector('input[type=file]');
+  input.click = () => {};
+  section(groupId).querySelector('.bam-pool-upload').click();
   const transfer = new DataTransfer();
   transfer.items.add(new File([originalPortrait], '池内上传.webp', {type:'image/webp'}));
-  input.files = transfer.files; poolPicker.open = true;
+  input.files = transfer.files;
   input.dispatchEvent(new Event('change', {bubbles:true}));
-  await until(() => poolPicker.querySelector('select').value === '我上传的' && poolGrid.querySelector('[data-id^="upload:"]'));
-  poolGrid.querySelector('button').click(); await until(() => manager.pendingFile && !poolPicker.open);
+  await until(() => section(groupId).querySelector('[data-id^="upload:"]'));
+  section(groupId).querySelector('[data-id^="upload:"]').click(); await until(() => manager.pendingFile && !poolPicker.open);
   document.getElementById('bam-alias-input').value = '池内选用';
   document.getElementById('bam-btn-confirm-upload').click();
   await until(() => document.querySelector('.bam-avatar-item[data-name="池内选用"]'));
   const savedPoolAvatar = await db.get(manager._getActiveCharId(), '池内选用');
   check(savedPoolAvatar.imageBlob?.size === originalPortrait.size, 'pool assignment must carry a portable image');
+  poolPicker.open = true; await tick();
+  poolPicker.querySelector('.bam-manage-toggle').click(); await tick();
+  editor.querySelector('select').value = groupId;
+  editor.querySelector('select').dispatchEvent(new Event('change'));
+  const originalConfirm = window.confirm;
+  try {
+    window.confirm = () => true;
+    editor.querySelector('[data-edit=delete]').click();
+    await until(() => !section(groupId) && section('ungrouped')?.querySelectorAll('button[data-id]').length === 2);
+  } finally { window.confirm = originalConfirm; }
   manager.close(); await app.refresh(); await tick();
   check(story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img')?.src.startsWith('blob:'), 'manual pool assignment did not override automatic selection');
-  passes.push('PASS 30 张内置图可解码，池内选图指定、本地上传入池、再选用和手动覆盖均生效');
+  passes.push('PASS 八批共 80 张透明头像；分组新建、改名、排序、移动头像、定向上传及选用生效');
   output.textContent = passes.join('\n'); output.dataset.status = 'passed';
 } catch (error) {
   output.textContent = passes.join('\n') + '\nFAIL ' + (error.stack || error.message);

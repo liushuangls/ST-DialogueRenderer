@@ -1,11 +1,11 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.3.0";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.3.0";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.3.0";
-import { STORE_AVATARS } from "./storage.js?v=2.3.0";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.3.0";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.3.0";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.4.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.4.0";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.4.0";
+import { STORE_AVATARS } from "./storage.js?v=2.4.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.4.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.4.0";
 
-import { bindPoolPicker } from "./pool-picker.js?v=2.3.0";
+import { bindPoolPicker } from "./pool-picker.js?v=2.4.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -857,12 +857,15 @@ class AvatarManagerPanel {
       </div>
       <details id="bam-pool" class="bam-pool">
         <summary>从头像池选择</summary>
-        <div class="bam-pool-tools">
-          <select aria-label="头像分类"><option value="">全部头像</option><option>男性像素</option><option>女性像素</option><option>多色小人</option><option>我上传的</option></select>
-          <button type="button" class="bam-pool-upload">上传到头像池</button>
-          <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
+        <div class="bam-pool-tools"><button type="button" class="bam-manage-toggle" aria-expanded="false">管理分组</button></div>
+        <div class="bam-group-editor" hidden>
+          <select aria-label="管理目标分组"></select>
+          <div class="bam-group-input"><input type="text" placeholder="组名" aria-label="组名"><button type="button" data-edit="create">新建</button><button type="button" data-edit="rename">改名</button></div>
+          <div class="bam-group-actions"><button type="button" data-edit="up">上移</button><button type="button" data-edit="down">下移</button><button type="button" data-edit="delete">删除组</button></div>
+          <button type="button" data-edit="move" disabled>将所选头像移入此组</button>
         </div>
-        <div class="bam-pool-grid"></div>
+        <div class="bam-pool-sections"></div>
+        <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden>
         <div role="status" aria-live="polite"></div>
       </details>
       <div id="bam-upload-area" style="
