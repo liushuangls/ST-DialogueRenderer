@@ -15,6 +15,19 @@ const DEFAULT_MOOD_GROUPS = Object.freeze([
   { id: 'mood-proud',    label: '得意', color: '#d97706', words: ['得意','骄傲','自豪','自信','自满','傲然','得瑟'] },
 ]);
 
+// Reading presets use the existing color-mode and font-family settings so backups
+// and synchronized preferences keep the same format.
+export const READING_PALETTES = {
+  light: { label: '白天', paper: '#FAF9F5', ink: '#3B3935', narration: '#53504B', speech: '#2D2B27', name: '#000000' },
+  dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF' },
+  parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000' },
+};
+export const READING_FONTS = {
+  'system-ui': { label: '系统黑体', stack: 'system-ui, sans-serif' },
+  'BD Noto Serif SC': { label: '思源宋体', stack: '"Noto Serif SC", "Source Han Serif SC", "BD Noto Serif SC", serif' },
+  'BD LXGW WenKai': { label: '霞鹜文楷', stack: '"LXGW WenKai", "霞鹜文楷", "BD LXGW WenKai", serif' },
+};
+
 const STYLE_DEFAULTS = {
   style_dialogueFontSize: 14.5,
   style_narrationFontSize: 14,

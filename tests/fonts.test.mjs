@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { FontCatalog } from "../src/fonts.js?v=2.1.3";
-import { RenderAssets } from "../src/assets.js?v=2.1.3";
+import { FontCatalog } from "../src/fonts.js?v=2.2.0";
+import { RenderAssets } from "../src/assets.js?v=2.2.0";
 
 test('remote font catalogue coalesces requests, caches successes and supports explicit refresh', async () => {
   const original = globalThis.fetch;
@@ -11,12 +11,12 @@ test('remote font catalogue coalesces requests, caches successes and supports ex
     calls++;
     return new Response(JSON.stringify({ fonts: [{ family:'Review Font', url:'https://example.test/font.woff2', type:'file' }] }));
   };
-  const fonts = new FontCatalog({ listLocalFonts: async () => [], getCssFontSources: async () => [] });
+  const fonts = new FontCatalog();
   try {
-    const [a, b] = await Promise.all([fonts.getOptions('https://example.test/fonts.json'), fonts.getOptions('https://example.test/fonts.json')]);
+    const [a, b] = await Promise.all([fonts.getRemote('https://example.test/fonts.json'), fonts.getRemote('https://example.test/fonts.json')]);
     assert.equal(calls, 1); assert.deepEqual(a, b);
-    await fonts.getOptions('https://example.test/fonts.json'); assert.equal(calls, 1);
-    await fonts.getOptions('https://example.test/fonts.json', { forceRefresh: true }); assert.equal(calls, 2);
+    await fonts.getRemote('https://example.test/fonts.json'); assert.equal(calls, 1);
+    await fonts.getRemote('https://example.test/fonts.json', { forceRefresh: true }); assert.equal(calls, 2);
     globalThis.fetch = async () => new Response('bad response', { status: 503 });
     await assert.rejects(fonts.getRemote('https://example.test/failing.json'), /503/);
     globalThis.fetch = async () => new Response(JSON.stringify({ fonts: [] }));

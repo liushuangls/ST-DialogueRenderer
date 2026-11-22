@@ -1,4 +1,5 @@
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.1.3";
+import { READING_PALETTES, READING_FONTS } from "./config.js?v=2.2.0";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.0";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
@@ -152,11 +153,16 @@ function bubble(doc, parsed, line, assets, isAlive) {
 export function applyStyles(root, settings) {
   if (root.dataset.bdColorMode !== settings.style_textColorMode) root.dataset.bdColorMode = settings.style_textColorMode;
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
-  const fonts = key => JSON.stringify(settings[key]) + ',system-ui,sans-serif';
+  const palette = READING_PALETTES[settings.style_textColorMode];
+  const fonts = key => READING_FONTS[settings[key]]?.stack ?? (JSON.stringify(settings[key]) + ',system-ui,sans-serif');
   const size = Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
   const radius = settings.style_avatarShape === 'circle' ? '50%' : settings.style_avatarShape === 'square' ? '0px' : '8px';
   const css = {
-    '--bd-color': settings.style_globalTextColor,
+    '--bd-color': palette?.ink ?? settings.style_globalTextColor,
+    '--bd-paper': palette?.paper ?? 'transparent',
+    '--bd-narration-color': palette?.narration ?? settings.style_globalTextColor,
+    '--bd-speech-color': palette?.speech ?? settings.style_globalTextColor,
+    '--bd-name-color': palette?.name ?? settings.style_globalTextColor,
     '--bd-narration-size': px('style_narrationFontSize', '14px'),
     '--bd-dialogue-size': px('style_dialogueFontSize', '14.5px'),
     '--bd-narration-weight': settings.style_narrationFontWeight,
@@ -172,7 +178,7 @@ export function applyStyles(root, settings) {
     '--bd-narration-right': px('style_narrationPaddingRight', '16px'),
     '--bd-narration-radius': px('style_narrationBorderRadius', '0px'),
     '--bd-indent': Number(settings.style_narrationTextIndent) + 'em',
-    '--bd-background': `color-mix(in srgb, ${settings.style_narrationBgColor} ${Number(settings.style_narrationBgOpacity) * 100}%, transparent)`,
+    '--bd-background': palette ? 'transparent' : `color-mix(in srgb, ${settings.style_narrationBgColor} ${Number(settings.style_narrationBgOpacity) * 100}%, transparent)`,
     '--bd-avatar-size': size + 'px', '--bd-avatar-radius': radius,
     '--bd-message-left': (size + 24) + 'px', '--bd-message-min-height': Math.max(56, size + 4) + 'px',
     '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',

@@ -1,12 +1,18 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, writeStyleSnapshot } from "./config.js?v=2.1.3";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.1.3";
-import { LOCAL_FONT_MAX_SIZE, LOCAL_FONT_ACCEPT, FONT_EXT_FORMAT_MAP, FONT_EXT_MIME_MAP } from "./fonts.js?v=2.1.3";
-import { STORE_AVATARS } from "./storage.js?v=2.1.3";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.1.3";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.1.3";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, writeStyleSnapshot } from "./config.js?v=2.2.0";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.0";
+import { applyStyles } from "./dom-renderer.js?v=2.2.0";
+import { STORE_AVATARS } from "./storage.js?v=2.2.0";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.0";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.0";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
-const FONT_FETCH_TIMEOUT_MS = 8000;
+const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
+
+function selectedFont(settings) {
+  const family = settings.style_dialogueFontFamily;
+  return Object.hasOwn(READING_FONTS, family) && FONT_KEYS.every(key => settings[key] === family) ? family : 'original';
+}
+
 function escapeHtmlAttr(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
@@ -14,17 +20,15 @@ function escapeHtmlAttr(value) {
 }
 
 class AvatarManagerPanel {
-  constructor(db, avatarSync, styleSync, { document = globalThis.document, fonts,
+  constructor(db, avatarSync, styleSync, { document = globalThis.document,
     onPreview = async () => {}, onClose = async () => {}, onRefresh = async () => {},
-    onStylesSaved = async () => {}, onFontsChanged = async () => {}, onPromptChanged = async () => {}, onError = console.error } = {}) {
+    onStylesSaved = async () => {}, onPromptChanged = async () => {}, onError = console.error } = {}) {
     this.db = db;
     this.document = document;
-    this.fonts = fonts;
     this.onPreview = onPreview;
     this.onClose = onClose;
     this.onRefresh = onRefresh;
     this.onStylesSaved = onStylesSaved;
-    this.onFontsChanged = onFontsChanged;
     this.onPromptChanged = onPromptChanged;
     this.onError = onError;
     this.avatarSync = avatarSync;
@@ -610,91 +614,13 @@ class AvatarManagerPanel {
   }
 
 
-  _getDialogueLineHeight(fontSize, spacing) {
-    const safeFontSize = Number.isFinite(fontSize) ? fontSize : STYLE_DEFAULTS.style_dialogueFontSize;
-    const safeSpacing = Number.isFinite(spacing) ? spacing : STYLE_DEFAULTS.style_dialogueSpacing;
-    const computed = Math.max(safeFontSize * 1.35, safeFontSize + safeSpacing);
-    return Math.round(computed * 100) / 100;
-  }
+  _getLiveStyleSettings() { return this._styleDraft; }
 
-  _getDefaultStyleSettings() { return { ...STYLE_DEFAULTS }; }
-
-  _getAvailableFontOptions(url, options = {}) {
-    return this.fonts.getOptions(url, options);
-  }
-
-  _applyFontOptionsToSelect(select, options, selectedFamily, fallbackFamily) {
-    if (!select) return;
-    const selected = selectedFamily || fallbackFamily;
-    const choices = [...options];
-    if (selected && !choices.some(font => font.family === selected)) choices.push({ name: selected, family: selected });
-    select.replaceChildren(...choices.map(font => {
-      const option = select.ownerDocument.createElement('option');
-      option.value = font.family; option.textContent = font.name;
-      return option;
-    }));
-    select.value = selected;
-  }
-
-  async _refreshFontSelectors({ forceRemote = false } = {}) {
-    const doc = this._getMainDocument();
-    const url = doc.getElementById('bam-font-url-input')?.value.trim() || '';
-    const options = await this.fonts.getOptions(url, { forceRefresh: forceRemote });
-    for (const [id, key] of [['bam-select-narration-font','style_narrationFontFamily'],
-      ['bam-select-dialogue-font','style_dialogueFontFamily'], ['bam-select-name-font','style_nameFontFamily']]) {
-      const select = doc.getElementById(id);
-      this._applyFontOptionsToSelect(select, options, select?.value, STYLE_DEFAULTS[key]);
-    }
-    await this.onFontsChanged();
-    return options;
-  }
-
-  _getLiveStyleSettings() {
-    const doc = this._getMainDocument();
-    const defaults = this._getDefaultStyleSettings();
-    const getNumberValue = (id, fallback) => {
-      const raw = doc.getElementById(id)?.value;
-      const parsed = Number.parseFloat(raw);
-      return Number.isFinite(parsed) ? parsed : fallback;
-    };
-    const getCheckedValue = (name, fallback) => doc.querySelector(`input[name="${name}"]:checked`)?.value || fallback;
-    const getSelectValue = (id, fallback) => doc.getElementById(id)?.value || fallback;
-
-    return {
-      style_dialogueFontSize: getNumberValue('bam-range-dialogue-font', defaults.style_dialogueFontSize),
-      style_narrationFontSize: getNumberValue('bam-range-narration-font', defaults.style_narrationFontSize),
-      style_dialogueSpacing: getNumberValue('bam-range-dialogue-spacing', defaults.style_dialogueSpacing),
-      style_textColorMode: getCheckedValue('bam-color-mode', defaults.style_textColorMode),
-      style_globalTextColor: doc.getElementById('bam-global-color-picker')?.value || defaults.style_globalTextColor,
-      style_dialogueFontWeight: getNumberValue('bam-range-dialogue-weight', defaults.style_dialogueFontWeight),
-      style_narrationFontWeight: getNumberValue('bam-range-narration-weight', defaults.style_narrationFontWeight),
-      style_nameFontWeight: getNumberValue('bam-range-name-weight', defaults.style_nameFontWeight),
-      style_narrationBgColor: doc.getElementById('bam-narration-bg-color')?.value || defaults.style_narrationBgColor,
-      style_narrationBgOpacity: getNumberValue('bam-range-narration-bg-opacity', defaults.style_narrationBgOpacity),
-      style_avatarSize: getNumberValue('bam-range-avatar-size', defaults.style_avatarSize),
-      style_narrationIndent: getNumberValue('bam-range-narration-indent', defaults.style_narrationIndent),
-      style_narrationFontFamily: getSelectValue('bam-select-narration-font', defaults.style_narrationFontFamily),
-      style_dialogueFontFamily: getSelectValue('bam-select-dialogue-font', defaults.style_dialogueFontFamily),
-      style_nameFontFamily: getSelectValue('bam-select-name-font', defaults.style_nameFontFamily),
-      style_fontConfigUrl: doc.getElementById('bam-font-url-input')?.value?.trim() || defaults.style_fontConfigUrl,
-      style_narrationBorderRadius: getNumberValue('bam-range-narration-border-radius', defaults.style_narrationBorderRadius),
-      style_avatarShape: getCheckedValue('bam-avatar-shape', defaults.style_avatarShape),
-      style_globalAvatarFallback: doc.getElementById('bam-chk-global-avatar-fallback')?.checked === true,
-      // v7.0
-      style_narrationTextIndent: getNumberValue('bam-range-narration-text-indent', defaults.style_narrationTextIndent),
-      style_narrationLineHeight: getNumberValue('bam-range-narration-line-height', defaults.style_narrationLineHeight),
-      style_narrationPaddingRight: getNumberValue('bam-range-narration-padding-right', defaults.style_narrationPaddingRight),
-      style_imageCompressEnabled: doc.getElementById('bam-chk-compress-enabled')?.checked !== false,
-      style_imageCompressQuality: getNumberValue('bam-range-compress-quality', defaults.style_imageCompressQuality),
-    };
-  }
-
-  async _applyBubblePreviewStyles(styleSettings = null) {
-    const settings = { ...this._getDefaultStyleSettings(), ...(styleSettings || this._getLiveStyleSettings()) };
-    const baseline = this._styleSavedBaseline || STYLE_DEFAULTS;
-    const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== baseline[key]));
+  async _applyBubblePreviewStyles(settings = this._styleDraft) {
+    const sample = this._getMainDocument().getElementById('bam-reading-sample');
+    if (sample) applyStyles(sample, settings);
+    const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== this._styleSavedBaseline[key]));
     await this.onPreview(changes);
-    return true;
   }
 
   _refreshBubblePreview() {
@@ -965,65 +891,32 @@ class AvatarManagerPanel {
     </div>
 
     <div id="bam-tab-style" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:16px 20px;">
-      <div style="margin-bottom:14px;padding:10px;border:1px solid rgba(74,108,247,.25);border-radius:8px;font-size:11px;line-height:1.6;">
-        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
-          <span>☁️ 全局美化同步</span><button id="bam-btn-style-sync-now" type="button" style="cursor:pointer;">立即同步</button>
+      <fieldset class="bam-reading-field">
+        <legend>配色</legend>
+        <div class="bam-reading-choices">
+          <label class="bam-reading-choice"><input type="radio" name="bam-palette" value="original">原配色</label>
+          ${Object.entries(READING_PALETTES).map(([value, palette]) =>
+            `<label class="bam-reading-choice" style="background:${palette.paper};color:${palette.speech}"><input type="radio" name="bam-palette" value="${value}">${palette.label}</label>`).join('')}
         </div>
-        <div id="bam-style-sync-status" style="color:#888;">等待同步初始化</div>
-        <div style="color:#888;">保存的样式在所有角色卡间共用；字体与配置随 user.files 跨设备同步，另一端拉取后生效。</div>
-      </div>
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">文字</div>
-
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">台词字号</span><span id="bam-val-dialogue-font" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_dialogueFontSize}px</span></div>
-        <input id="bam-range-dialogue-font" type="range" min="12" max="22" step="0.5" value="${STYLE_DEFAULTS.style_dialogueFontSize}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文字号</span><span id="bam-val-narration-font" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationFontSize}px</span></div>
-        <input id="bam-range-narration-font" type="range" min="12" max="22" step="0.5" value="${STYLE_DEFAULTS.style_narrationFontSize}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">台词行距</span><span id="bam-val-dialogue-spacing" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_dialogueSpacing}px</span></div>
-        <input id="bam-range-dialogue-spacing" type="range" min="4" max="24" step="1" value="${STYLE_DEFAULTS.style_dialogueSpacing}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">台词字重</span><span id="bam-val-dialogue-weight" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_dialogueFontWeight}</span></div>
-        <input id="bam-range-dialogue-weight" type="range" min="100" max="900" step="10" value="${STYLE_DEFAULTS.style_dialogueFontWeight}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文字重</span><span id="bam-val-narration-weight" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationFontWeight}</span></div>
-        <input id="bam-range-narration-weight" type="range" min="100" max="900" step="10" value="${STYLE_DEFAULTS.style_narrationFontWeight}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:20px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">角色名字重</span><span id="bam-val-name-weight" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_nameFontWeight}</span></div>
-        <input id="bam-range-name-weight" type="range" min="100" max="900" step="10" value="${STYLE_DEFAULTS.style_nameFontWeight}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">颜色</div>
-      <div style="margin-bottom:20px;">
-        <label style="display:flex; align-items:center; gap:8px; margin-bottom:8px; cursor:pointer;">
-          <input type="radio" name="bam-color-mode" value="global" checked style="accent-color:#4a6cf7;" />
-          <span style="color:#ccc; font-size:13px;">全局统一色</span>
-          <input id="bam-global-color-picker" type="color" value="${STYLE_DEFAULTS.style_globalTextColor}" style="width:28px; height:28px; border:none; background:none; cursor:pointer; padding:0; margin-left:auto;" />
-        </label>
-        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-          <input type="radio" name="bam-color-mode" value="character" style="accent-color:#4a6cf7;" />
-          <span style="color:#ccc; font-size:13px;">跟随角色主题色</span>
-        </label>
-        <div style="color:#555; font-size:11px; margin-top:6px; padding-left:24px;">正文颜色始终跟随全局统一色</div>
-      </div>
-      <div style="display:flex; gap:12px; margin-bottom:10px; align-items:center;">
-        <label style="display:flex; align-items:center; gap:8px; flex:1; min-width:0;">
-          <span style="color:#ccc; font-size:13px; flex-shrink:0;">正文背景色</span>
-          <input id="bam-narration-bg-color" type="color" value="${STYLE_DEFAULTS.style_narrationBgColor}" style="width:36px; height:30px; border:none; background:none; cursor:pointer; padding:0;" />
-        </label>
-        <div style="flex:1; min-width:0;">
-          <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文背景透明度</span><span id="bam-val-narration-bg-opacity" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationBgOpacity.toFixed(2)}</span></div>
-          <input id="bam-range-narration-bg-opacity" type="range" min="0" max="0.4" step="0.01" value="${STYLE_DEFAULTS.style_narrationBgOpacity}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
+      </fieldset>
+      <fieldset class="bam-reading-field">
+        <legend>字体</legend>
+        <div class="bam-reading-choices">
+          <label class="bam-reading-choice"><input type="radio" name="bam-reading-font" value="original">原搭配</label>
+          ${Object.entries(READING_FONTS).map(([family, font]) =>
+            `<label class="bam-reading-choice"><input type="radio" name="bam-reading-font" value="${family}">${font.label}</label>`).join('')}
         </div>
+        <small>宋体、文楷优先使用本机字体，缺少时按需联网加载。</small>
+      </fieldset>
+      <div class="bam-reading-field">
+        <label for="bam-range-dialogue-font">字号</label> <output id="bam-val-dialogue-font" for="bam-range-dialogue-font"></output>
+        <input id="bam-range-dialogue-font" type="range" min="12" max="26" step="0.5" style="width:100%">
       </div>
-
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin:20px 0 10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">布局</div>
+      <div id="bam-reading-sample" class="bam-reading-sample" aria-label="阅读预览">
+        <p>她把书合上，望向窗外。</p>
+        <p class="bam-sample-line">「雨停了，我们走吧。」</p>
+      </div>
+      <details class="bam-avatar-options"><summary>头像与图片</summary>
       <div style="margin-bottom:16px;">
         <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">头像大小</span><span id="bam-val-avatar-size" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_avatarSize}px</span></div>
         <input id="bam-range-avatar-size" type="range" min="36" max="120" step="1" value="${STYLE_DEFAULTS.style_avatarSize}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
@@ -1045,67 +938,6 @@ class AvatarManagerPanel {
           </label>
         </div>
       </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文左侧留白</span><span id="bam-val-narration-indent" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationIndent}px</span></div>
-        <input id="bam-range-narration-indent" type="range" min="0" max="120" step="2" value="${STYLE_DEFAULTS.style_narrationIndent}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文背景圆角</span><span id="bam-val-narration-border-radius" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationBorderRadius}px</span></div>
-        <input id="bam-range-narration-border-radius" type="range" min="0" max="24" step="1" value="${STYLE_DEFAULTS.style_narrationBorderRadius}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文首行缩进</span><span id="bam-val-narration-text-indent" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationTextIndent}em</span></div>
-        <input id="bam-range-narration-text-indent" type="range" min="0" max="4" step="0.5" value="${STYLE_DEFAULTS.style_narrationTextIndent}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文行距</span><span id="bam-val-narration-line-height" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationLineHeight}</span></div>
-        <input id="bam-range-narration-line-height" type="range" min="1.2" max="3.0" step="0.05" value="${STYLE_DEFAULTS.style_narrationLineHeight}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-      <div style="margin-bottom:16px;">
-        <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span style="color:#ccc; font-size:13px;">正文右边距</span><span id="bam-val-narration-padding-right" style="color:#888; font-size:12px;">${STYLE_DEFAULTS.style_narrationPaddingRight}px</span></div>
-        <input id="bam-range-narration-padding-right" type="range" min="0" max="120" step="2" value="${STYLE_DEFAULTS.style_narrationPaddingRight}" style="width:100%; accent-color:#4a6cf7; cursor:pointer;" />
-      </div>
-
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin:20px 0 10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">字体</div>
-      <div style="display:grid; gap:12px; margin-bottom:14px;">
-        <label style="display:flex; flex-direction:column; gap:6px;">
-          <span style="color:#ccc; font-size:13px;">正文字体</span>
-          <select id="bam-select-narration-font" style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:#e0e0e0; border-radius:8px; padding:8px 10px;"></select>
-        </label>
-        <label style="display:flex; flex-direction:column; gap:6px;">
-          <span style="color:#ccc; font-size:13px;">台词字体</span>
-          <select id="bam-select-dialogue-font" style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:#e0e0e0; border-radius:8px; padding:8px 10px;"></select>
-        </label>
-        <label style="display:flex; flex-direction:column; gap:6px;">
-          <span style="color:#ccc; font-size:13px;">角色名字体</span>
-          <select id="bam-select-name-font" style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:#e0e0e0; border-radius:8px; padding:8px 10px;"></select>
-        </label>
-      </div>
-      <label style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
-        <span style="color:#ccc; font-size:13px;">远程字体配置 URL</span>
-        <input id="bam-font-url-input" type="url" placeholder="https://example.com/fonts.json" value="${STYLE_DEFAULTS.style_fontConfigUrl}" style="background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:#e0e0e0; border-radius:8px; padding:8px 10px;" />
-      </label>
-      <div style="display:flex; justify-content:flex-end; margin-bottom:20px;">
-        <button id="bam-btn-refresh-fonts" style="background:rgba(74,108,247,0.16); border:1px solid rgba(74,108,247,0.35); color:#b9c7ff; padding:8px 12px; border-radius:8px; cursor:pointer; font-size:12px;">刷新字体列表</button>
-      </div>
-
-      <label style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;">
-        <span style="color:#ccc; font-size:13px;">在线 CSS 字体导入</span>
-        <div style="display:flex; gap:8px;">
-          <input id="bam-css-font-url-input" type="url" placeholder="https://fontsapi.xxx.com/.../result.css" style="flex:1; background:rgba(0,0,0,0.28); border:1px solid rgba(255,255,255,0.08); color:#e0e0e0; border-radius:8px; padding:8px 10px; min-width:0;" />
-          <button id="bam-btn-import-css-font" style="background:rgba(74,108,247,0.16); border:1px solid rgba(74,108,247,0.35); color:#b9c7ff; padding:8px 12px; border-radius:8px; cursor:pointer; font-size:12px; white-space:nowrap;">解析并导入</button>
-        </div>
-      </label>
-      <div id="bam-css-font-sources" style="margin-bottom:16px; max-height:150px; overflow-y:auto;"></div>
-
-      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;">
-        <span style="color:#ccc; font-size:13px;">本地字体</span>
-        <button id="bam-btn-upload-local-font" style="background:rgba(74,108,247,0.16); border:1px solid rgba(74,108,247,0.35); color:#b9c7ff; padding:6px 12px; border-radius:8px; cursor:pointer; font-size:12px;">+ 上传字体文件</button>
-        <input id="bam-local-font-input" type="file" accept="${LOCAL_FONT_ACCEPT}" style="display:none;" />
-      </div>
-      <div id="bam-local-font-list" style="margin-bottom:20px; max-height:150px; overflow-y:auto;"></div>
-
-      <div style="color:#666; font-size:11px; text-transform:uppercase; letter-spacing:1px; margin:20px 0 10px; border-bottom:1px solid rgba(255,255,255,0.06); padding-bottom:6px;">存储优化</div>
       <div style="margin-bottom:10px;">
         <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
           <input id="bam-chk-compress-enabled" type="checkbox" checked style="accent-color:#4a6cf7;" />
@@ -1118,12 +950,17 @@ class AvatarManagerPanel {
         <div style="color:#555; font-size:11px; margin-top:4px;">质量 0.8 视觉几乎无损，体积可减少 30~60%。设为 1.0 则近似无损。</div>
       </div>
 
+      </details>
       <div style="display:flex; justify-content:center; gap:12px; margin-bottom:12px;">
         <button id="bam-btn-save-style" style="background:#4a6cf7; border:none; color:#fff; padding:8px 24px; border-radius:6px; cursor:pointer; font-size:13px; opacity:0.65;" disabled>保存样式</button>
         <button id="bam-btn-reset-style" style="background:rgba(255,255,255,0.06); border:none; color:#aaa; padding:8px 24px; border-radius:6px; cursor:pointer; font-size:13px;">恢复默认</button>
       </div>
       <div id="bam-style-save-tip" style="text-align:center; color:#555; font-size:11px; padding:8px 0; border-top:1px solid rgba(255,255,255,0.06);">
-        当前样式已保存；调整时只影响预览，点击保存后下次静态重渲染读取新值</div>
+        当前样式已保存</div>
+      <details class="bam-avatar-options"><summary>多端同步</summary>
+        <div id="bam-style-sync-status" role="status">等待同步初始化</div>
+        <button id="bam-btn-style-sync-now" type="button">立即同步</button>
+      </details>
     </div>
 
     <div id="bam-tab-mood" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:16px 20px;">
@@ -1348,261 +1185,37 @@ class AvatarManagerPanel {
       else if (moodBtn.classList.contains('bam-mood-delete')) this._handleMoodDelete(name, moodId);
     });
 
-    // - 正文美化 Tab 事件 -
-    const applyLiveStylePreview = () => {
-      this._applyBubblePreviewStyles().catch((err) => {
-        console.warn('Bubble 预览样式应用失败:', err);
-      });
+    const styleTab = $('#bam-tab-style');
+    const changeReadingStyle = event => {
+      const input = event.target;
+      if (!this._styleDraftLoaded || input.tagName !== 'INPUT') return;
+      const draft = this._styleDraft;
+      const baseline = this._styleSavedBaseline;
+      if (input.name === 'bam-palette') {
+        draft.style_textColorMode = input.value === 'original'
+          ? (baseline.style_textColorMode === 'character' ? 'character' : 'global') : input.value;
+      } else if (input.name === 'bam-reading-font') {
+        const original = selectedFont(baseline) === 'original' ? baseline : STYLE_DEFAULTS;
+        for (const key of FONT_KEYS) draft[key] = input.value === 'original' ? original[key] : input.value;
+      } else if (input.id === 'bam-range-dialogue-font') {
+        draft.style_dialogueFontSize = draft.style_narrationFontSize = input.valueAsNumber;
+      } else if (input.id === 'bam-range-avatar-size') {
+        draft.style_avatarSize = input.valueAsNumber;
+      } else if (input.name === 'bam-avatar-shape') {
+        draft.style_avatarShape = input.value;
+      } else if (input.id === 'bam-chk-compress-enabled') {
+        draft.style_imageCompressEnabled = input.checked;
+      } else if (input.id === 'bam-range-compress-quality') {
+        draft.style_imageCompressQuality = input.valueAsNumber;
+      } else return;
+      this._showStyleDraft();
     };
-    const markStyleDirty = () => {
-      if (!this._styleDraftLoaded) this._styleDraftLoaded = true;
-      this._setStyleDraftDirty(true);
-    };
-    const previewAndMarkDirty = () => {
-      applyLiveStylePreview();
-      markStyleDirty();
-    };
-    const bindRangeSetting = ({ inputId, valueId, formatter }) => {
-      const inputEl = $(inputId);
-      const valueEl = $(valueId);
-      if (!inputEl || !valueEl) return;
-      const syncDisplay = (value) => {
-        valueEl.textContent = formatter(value);
-      };
-      inputEl.addEventListener('input', (e) => {
-        syncDisplay(e.target.value);
-        previewAndMarkDirty();
-      });
-      inputEl.addEventListener('change', (e) => {
-        syncDisplay(e.target.value);
-        previewAndMarkDirty();
-      });
-    };
-
-    bindRangeSetting({ inputId: '#bam-range-dialogue-font', valueId: '#bam-val-dialogue-font', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-narration-font', valueId: '#bam-val-narration-font', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-dialogue-spacing', valueId: '#bam-val-dialogue-spacing', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-dialogue-weight', valueId: '#bam-val-dialogue-weight', formatter: (v) => `${v}` });
-    bindRangeSetting({ inputId: '#bam-range-narration-weight', valueId: '#bam-val-narration-weight', formatter: (v) => `${v}` });
-    bindRangeSetting({ inputId: '#bam-range-name-weight', valueId: '#bam-val-name-weight', formatter: (v) => `${v}` });
-    bindRangeSetting({ inputId: '#bam-range-narration-bg-opacity', valueId: '#bam-val-narration-bg-opacity', formatter: (v) => Number.parseFloat(v).toFixed(2) });
-    bindRangeSetting({ inputId: '#bam-range-avatar-size', valueId: '#bam-val-avatar-size', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-narration-indent', valueId: '#bam-val-narration-indent', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-narration-border-radius', valueId: '#bam-val-narration-border-radius', formatter: (v) => `${v}px` });
-    // v7.0
-    bindRangeSetting({ inputId: '#bam-range-narration-text-indent', valueId: '#bam-val-narration-text-indent', formatter: (v) => `${v}em` });
-    bindRangeSetting({ inputId: '#bam-range-narration-line-height', valueId: '#bam-val-narration-line-height', formatter: (v) => `${v}` });
-    bindRangeSetting({ inputId: '#bam-range-narration-padding-right', valueId: '#bam-val-narration-padding-right', formatter: (v) => `${v}px` });
-    bindRangeSetting({ inputId: '#bam-range-compress-quality', valueId: '#bam-val-compress-quality', formatter: (v) => Number.parseFloat(v).toFixed(2) });
-    $('#bam-chk-compress-enabled')?.addEventListener('change', () => { markStyleDirty(); });
-
-    doc.querySelectorAll('input[name="bam-avatar-shape"]').forEach((radio) => {
-      radio.addEventListener('change', () => {
-        previewAndMarkDirty();
-      });
-    });
-
-    doc.querySelectorAll('input[name="bam-color-mode"]').forEach((radio) => {
-      radio.addEventListener('change', () => {
-        previewAndMarkDirty();
-      });
-    });
-
-    ['#bam-global-color-picker', '#bam-narration-bg-color'].forEach((selector) => {
-      $(selector)?.addEventListener('input', () => {
-        previewAndMarkDirty();
-      });
-      $(selector)?.addEventListener('change', () => {
-        previewAndMarkDirty();
-      });
-    });
-
-    ['#bam-select-narration-font', '#bam-select-dialogue-font', '#bam-select-name-font'].forEach((selector) => {
-      $(selector)?.addEventListener('change', () => {
-        previewAndMarkDirty();
-      });
-    });
-
-    const fontUrlInput = $('#bam-font-url-input');
-    fontUrlInput?.addEventListener('input', () => {
-      markStyleDirty();
-    });
-    fontUrlInput?.addEventListener('change', () => {
-      markStyleDirty();
-    });
-    $('#bam-btn-refresh-fonts')?.addEventListener('click', async () => {
-      try {
-        await this._refreshFontSelectors({ forceRemote: true, silent: false });
-        await this._applyBubblePreviewStyles();
-        markStyleDirty();
-      } catch (err) {
-        console.warn('刷新远程字体失败:', err);
-        alert(`字体列表刷新失败：${err.message}`);
-      }
-    });
-
-    // - CSS 字体导入 -
-    $('#bam-btn-import-css-font')?.addEventListener('click', async () => {
-      const urlInput = doc.getElementById('bam-css-font-url-input');
-      const cssUrl = urlInput?.value?.trim();
-      if (!cssUrl) { alert('请输入 CSS URL'); return; }
-      const btn = doc.getElementById('bam-btn-import-css-font');
-      const originalText = btn.textContent;
-      btn.textContent = '解析中...';
-      btn.disabled = true;
-      try {
-        const result = await this._parseCssFontFaces(cssUrl);
-        if (!result.families.length) { alert('未在 CSS 中找到任何 @font-face 声明'); return; }
-        await this.db.addCssFontSource(cssUrl, result.families);
-        urlInput.value = '';
-        await this._renderCssFontSources();
-        await this._refreshFontSelectors({ forceRemote: false, silent: true });
-        previewAndMarkDirty();
-        alert(`成功导入 ${result.families.length} 个字体族：${result.families.join('、')}`);
-      } catch (err) {
-        alert(`CSS 字体导入失败：${err.message}`);
-      } finally {
-        btn.textContent = originalText;
-        btn.disabled = false;
-      }
-    });
-    doc.getElementById('bam-css-font-sources')?.addEventListener('click', async (e) => {
-      const delBtn = e.target.closest('.bam-css-font-delete');
-      if (!delBtn) return;
-      const url = delBtn.dataset.url;
-      if (!confirm(`确定删除此 CSS 字体源？`)) return;
-      await this.db.deleteCssFontSource(url);
-      await this._renderCssFontSources();
-      await this._refreshFontSelectors({ forceRemote: false, silent: true });
-      previewAndMarkDirty();
-    });
-
-    // - 本地字体上传 -
-    const fontUploadBtn = $('#bam-btn-upload-local-font');
-    fontUploadBtn?.addEventListener('click', () => {
-      doc.getElementById('bam-local-font-input')?.click();
-    });
-    $('#bam-local-font-input')?.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      e.target.value = '';
-      if (file.size > LOCAL_FONT_MAX_SIZE) { alert(`字体文件不能超过 ${LOCAL_FONT_MAX_SIZE / 1024 / 1024}MB`); return; }
-      const ext = file.name.split('.').pop()?.toLowerCase() || '';
-      if (!FONT_EXT_FORMAT_MAP[ext]) { alert('不支持的字体格式，请选择 .woff2 / .woff / .ttf / .otf'); return; }
-      const family = file.name.replace(/\.[^.]+$/, '').trim();
-      if (!family) { alert('无法从文件名提取字体名称'); return; }
-      const existing = await this.db.getLocalFont(family);
-      if (existing && !confirm(`已存在同名字体「${family}」，是否替换？`)) return;
-      const origText = fontUploadBtn ? fontUploadBtn.textContent : '';
-      if (fontUploadBtn) { fontUploadBtn.disabled = true; fontUploadBtn.textContent = '上传中...'; }
-      try {
-        await this.db.addLocalFont(family, file, { fileName: file.name, mimeType: FONT_EXT_MIME_MAP[ext] });
-        await this._renderLocalFontList();
-        await this._refreshFontSelectors({ forceRemote: false, silent: true });
-        previewAndMarkDirty();
-      } catch (err) { alert('字体上传失败：' + err.message); }
-      finally { if (fontUploadBtn) { fontUploadBtn.disabled = false; fontUploadBtn.textContent = origText; } }
-    });
-    doc.getElementById('bam-local-font-list')?.addEventListener('click', async (e) => {
-      const delBtn = e.target.closest('.bam-local-font-delete');
-      if (!delBtn) return;
-      const family = delBtn.dataset.family;
-      if (!confirm(`确定删除本地字体「${family}」？`)) return;
-      try {
-        await this.db.deleteLocalFont(family);
-        await this._renderLocalFontList();
-        await this._refreshFontSelectors({ forceRemote: false, silent: true });
-        previewAndMarkDirty();
-      } catch (err) { alert('删除失败：' + err.message); }
-    });
-
-    doc.querySelectorAll('input[name="bam-md-mode"]').forEach((radio) => {
-      radio.addEventListener('change', () => {
-        markStyleDirty();
-      });
-    });
+    styleTab.addEventListener('input', changeReadingStyle);
 
     $('#bam-btn-save-style')?.addEventListener('click', async () => {
       await this._saveCurrentStyleSettings();
     });
     $('#bam-btn-reset-style').addEventListener('click', () => this._resetStyleDefaults());
-  }
-
-  // -- CSS 字体解析 --
-
-  async _parseCssFontFaces(cssUrl) {
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = controller ? setTimeout(() => controller.abort(), FONT_FETCH_TIMEOUT_MS) : null;
-    try {
-      const response = await fetch(cssUrl, { method: 'GET', cache: 'no-store', signal: controller?.signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const cssText = await response.text();
-      const fontFaceRegex = /@font-face\s*\{([^}]+)\}/gi;
-      const familyRegex = /font-family\s*:\s*['"]?([^'";]+)['"]?\s*;/i;
-      const families = new Set();
-      let match;
-      while ((match = fontFaceRegex.exec(cssText)) !== null) {
-        const familyMatch = familyRegex.exec(match[1]);
-        if (familyMatch) families.add(familyMatch[1].trim());
-      }
-      return { url: cssUrl, families: Array.from(families) };
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  // -- 本地字体列表渲染 --
-
-  async _renderLocalFontList() {
-    const doc = this._getMainDocument();
-    const container = doc.getElementById('bam-local-font-list');
-    if (!container) return;
-    try {
-      const fonts = await this.db.listLocalFonts();
-      if (!fonts.length) {
-        container.innerHTML = '<div style="color:#555; font-size:12px; text-align:center; padding:6px 0;">暂无本地字体</div>';
-        return;
-      }
-      container.innerHTML = fonts.map(f => {
-        const sizeKB = (f.fileSize / 1024).toFixed(1);
-        const safeFamily = escapeHtmlAttr(f.family);
-        return `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:4px;">
-          <span style="color:#ccc; font-size:12px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${safeFamily}">${safeFamily}</span>
-          <span style="color:#666; font-size:11px; flex-shrink:0;">${sizeKB} KB</span>
-          <button class="bam-local-font-delete" data-family="${safeFamily}" style="background:rgba(255,80,80,0.1); border:none; color:#e55; width:22px; height:22px; border-radius:4px; cursor:pointer; font-size:12px; flex-shrink:0; line-height:1;">&times;</button>
-        </div>`;
-      }).join('');
-    } catch (_) {
-      container.innerHTML = '';
-    }
-  }
-
-  // -- CSS 字体源列表渲染 --
-
-  async _renderCssFontSources() {
-    const doc = this._getMainDocument();
-    const container = doc.getElementById('bam-css-font-sources');
-    if (!container) return;
-    try {
-      const sources = await this.db.getCssFontSources();
-      if (!sources.length) {
-        container.innerHTML = '';
-        return;
-      }
-      container.innerHTML = sources.map(src => {
-        const safeUrl = escapeHtmlAttr(src.url);
-        const familyText = (src.families || []).join('、') || '未知';
-        return `<div style="display:flex; align-items:center; gap:8px; padding:6px 8px; background:rgba(255,255,255,0.03); border-radius:6px; margin-bottom:4px;">
-          <div style="flex:1; min-width:0; overflow:hidden;">
-            <div style="color:#ccc; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${safeUrl}">${safeUrl}</div>
-            <div style="color:#888; font-size:10px; margin-top:2px;">字体族：${escapeHtmlAttr(familyText)}</div>
-          </div>
-          <button class="bam-css-font-delete" data-url="${safeUrl}" style="background:rgba(255,80,80,0.1); border:none; color:#e55; width:22px; height:22px; border-radius:4px; cursor:pointer; font-size:12px; flex-shrink:0; line-height:1;">&times;</button>
-        </div>`;
-      }).join('');
-    } catch (_) {
-      container.innerHTML = '';
-    }
   }
 
   // -- 文件处理 --
@@ -1963,8 +1576,6 @@ class AvatarManagerPanel {
     } else if (tabName === 'style') {
       styleTab.style.display = 'flex';
       if (!this._styleDraftLoaded) await this._loadStyleSettings();
-      await this._renderLocalFontList();
-      await this._renderCssFontSources();
     } else if (tabName === 'mood') {
       moodTab.style.display = 'flex';
       if (!this._moodConfigLoaded) await this._loadMoodConfigTab();
@@ -1973,67 +1584,26 @@ class AvatarManagerPanel {
 
   // -- 正文美化：加载配置 --
 
-  _applyStyleSettingsToControls(settings) {
+  _showStyleDraft() {
     const doc = this._getMainDocument();
-    const $ = (s) => doc.querySelector(s);
-
-    $('#bam-range-dialogue-font').value = settings.style_dialogueFontSize;
-    $('#bam-val-dialogue-font').textContent = `${settings.style_dialogueFontSize}px`;
-    $('#bam-range-narration-font').value = settings.style_narrationFontSize;
-    $('#bam-val-narration-font').textContent = `${settings.style_narrationFontSize}px`;
-    $('#bam-range-dialogue-spacing').value = settings.style_dialogueSpacing;
-    $('#bam-val-dialogue-spacing').textContent = `${settings.style_dialogueSpacing}px`;
-    $('#bam-range-dialogue-weight').value = settings.style_dialogueFontWeight;
-    $('#bam-val-dialogue-weight').textContent = `${settings.style_dialogueFontWeight}`;
-    $('#bam-range-narration-weight').value = settings.style_narrationFontWeight;
-    $('#bam-val-narration-weight').textContent = `${settings.style_narrationFontWeight}`;
-    $('#bam-range-name-weight').value = settings.style_nameFontWeight;
-    $('#bam-val-name-weight').textContent = `${settings.style_nameFontWeight}`;
-    $('#bam-global-color-picker').value = settings.style_globalTextColor;
-    $('#bam-narration-bg-color').value = settings.style_narrationBgColor;
-    $('#bam-range-narration-bg-opacity').value = settings.style_narrationBgOpacity;
-    $('#bam-val-narration-bg-opacity').textContent = Number.parseFloat(settings.style_narrationBgOpacity).toFixed(2);
-    $('#bam-range-avatar-size').value = settings.style_avatarSize;
-    $('#bam-val-avatar-size').textContent = `${settings.style_avatarSize}px`;
-    $('#bam-range-narration-indent').value = settings.style_narrationIndent;
-    $('#bam-val-narration-indent').textContent = `${settings.style_narrationIndent}px`;
-    $('#bam-range-narration-border-radius').value = settings.style_narrationBorderRadius;
-    $('#bam-val-narration-border-radius').textContent = `${settings.style_narrationBorderRadius}px`;
-    // v7.0
-    if ($('#bam-range-narration-text-indent')) {
-      $('#bam-range-narration-text-indent').value = settings.style_narrationTextIndent;
-      $('#bam-val-narration-text-indent').textContent = `${settings.style_narrationTextIndent}em`;
+    const settings = this._styleDraft;
+    const setChoice = (name, value) => {
+      for (const input of doc.querySelectorAll(`input[name="${name}"]`)) input.checked = input.value === value;
+    };
+    setChoice('bam-palette', Object.hasOwn(READING_PALETTES, settings.style_textColorMode) ? settings.style_textColorMode : 'original');
+    setChoice('bam-reading-font', selectedFont(settings));
+    setChoice('bam-avatar-shape', settings.style_avatarShape);
+    for (const [id, value, label] of [
+      ['dialogue-font', settings.style_dialogueFontSize, settings.style_dialogueFontSize + 'px'],
+      ['avatar-size', settings.style_avatarSize, settings.style_avatarSize + 'px'],
+      ['compress-quality', settings.style_imageCompressQuality, Number(settings.style_imageCompressQuality).toFixed(2)],
+    ]) {
+      doc.getElementById('bam-range-' + id).value = value;
+      doc.getElementById('bam-val-' + id).textContent = label;
     }
-    if ($('#bam-range-narration-line-height')) {
-      $('#bam-range-narration-line-height').value = settings.style_narrationLineHeight;
-      $('#bam-val-narration-line-height').textContent = `${settings.style_narrationLineHeight}`;
-    }
-    if ($('#bam-range-narration-padding-right')) {
-      $('#bam-range-narration-padding-right').value = settings.style_narrationPaddingRight;
-      $('#bam-val-narration-padding-right').textContent = `${settings.style_narrationPaddingRight}px`;
-    }
-    if ($('#bam-chk-global-avatar-fallback')) {
-      $('#bam-chk-global-avatar-fallback').checked = settings.style_globalAvatarFallback === true || settings.style_globalAvatarFallback === 'true';
-    }
-    if ($('#bam-chk-compress-enabled')) {
-      $('#bam-chk-compress-enabled').checked = settings.style_imageCompressEnabled !== false && settings.style_imageCompressEnabled !== 'false';
-    }
-    if ($('#bam-range-compress-quality')) {
-      $('#bam-range-compress-quality').value = settings.style_imageCompressQuality;
-      $('#bam-val-compress-quality').textContent = `${Number(settings.style_imageCompressQuality).toFixed(2)}`;
-    }
-    $('#bam-font-url-input').value = settings.style_fontConfigUrl || '';
-
-    doc.querySelectorAll('input[name="bam-color-mode"]').forEach((radio) => {
-      radio.checked = radio.value === settings.style_textColorMode;
-    });
-    doc.querySelectorAll('input[name="bam-avatar-shape"]').forEach((radio) => {
-      radio.checked = radio.value === settings.style_avatarShape;
-    });
-
-    $('#bam-select-narration-font').value = settings.style_narrationFontFamily;
-    $('#bam-select-dialogue-font').value = settings.style_dialogueFontFamily;
-    $('#bam-select-name-font').value = settings.style_nameFontFamily;
+    doc.getElementById('bam-chk-compress-enabled').checked = settings.style_imageCompressEnabled;
+    this._setStyleDraftDirty(Object.keys(settings).some(key => settings[key] !== this._styleSavedBaseline[key]));
+    return this._applyBubblePreviewStyles(settings).catch(this.onError);
   }
 
   _setStyleDraftDirty(isDirty) {
@@ -2048,8 +1618,8 @@ class AvatarManagerPanel {
     }
     if (tipEl) {
       tipEl.textContent = this._styleDraftDirty
-        ? '当前调整仅作用于预览；保存后应用到全局，并加入多端同步'
-        : '当前样式已保存；多端同步状态见上方，调整后需再次保存';
+        ? '预览中，保存后应用到所有角色卡'
+        : '当前样式已保存';
     }
   }
 
@@ -2057,13 +1627,10 @@ class AvatarManagerPanel {
     const config = await this.db.getAllConfig();
     const settings = { ...STYLE_DEFAULTS, ...Object.fromEntries(Object.entries(config).filter(([key]) => key in STYLE_DEFAULTS)) };
 
-    this._applyStyleSettingsToControls(settings);
-    await this._refreshFontSelectors({ silent: true });
-    this._applyStyleSettingsToControls(settings);
+    this._styleDraft = { ...settings };
+    this._styleSavedBaseline = settings;
     this._styleDraftLoaded = true;
-    this._styleSavedBaseline = { ...settings };
-    this._setStyleDraftDirty(false);
-    await this._applyBubblePreviewStyles(settings);
+    await this._showStyleDraft();
   }
 
   // -- 正文美化：保存当前草稿 --
@@ -2086,13 +1653,11 @@ class AvatarManagerPanel {
   // -- 正文美化：恢复默认草稿 --
 
   async _resetStyleDefaults() {
-    const defaults = this._getDefaultStyleSettings();
-    this._applyStyleSettingsToControls(defaults);
-    await this._refreshFontSelectors({ silent: true });
-    this._applyStyleSettingsToControls(defaults);
-    this._styleDraftLoaded = true;
-    this._setStyleDraftDirty(true);
-    await this._applyBubblePreviewStyles(defaults);
+    for (const key of [...FONT_KEYS, 'style_textColorMode', 'style_dialogueFontSize', 'style_narrationFontSize',
+      'style_avatarSize', 'style_avatarShape', 'style_imageCompressEnabled', 'style_imageCompressQuality']) {
+      this._styleDraft[key] = STYLE_DEFAULTS[key];
+    }
+    await this._showStyleDraft();
   }
 
   // -- 情绪配置 Tab --

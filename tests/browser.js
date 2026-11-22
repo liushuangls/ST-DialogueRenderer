@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.1.3";
-import { AvatarDB } from "../src/storage.js?v=2.1.3";
-import { buildColorConfigKey } from "../src/context.js?v=2.1.3";
+import { createExtension } from "../src/extension.js?v=2.2.0";
+import { AvatarDB } from "../src/storage.js?v=2.2.0";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.0";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -128,18 +128,28 @@ try {
   await manager._switchTab('style');
   const text = document.querySelector('.dc-msg-text');
   const bubbleNode = document.querySelector('.dc-msg');
-  for (const [mode, color] of [['character','rgb(188, 51, 68)'], ['global','rgb(41, 39, 36)']]) {
-    const radio = document.querySelector(`input[name="bam-color-mode"][value="${mode}"]`);
-    radio.checked = true; radio.dispatchEvent(new Event('change')); await tick();
-    check(getComputedStyle(text).color === color, 'preview color mode failed: ' + mode);
-    check(document.querySelector('.dc-msg') === bubbleNode, 'color change rebuilt bubbles');
+  const readingRoot = text.closest('.bd-content');
+  const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
+  for (const [mode, paper, speech, narration] of [
+    ['light','rgb(250, 249, 245)','rgb(45, 43, 39)','rgb(83, 80, 75)'],
+    ['dark','rgb(44, 44, 44)','rgb(239, 237, 232)','rgb(207, 203, 196)'],
+    ['parchment','rgb(239, 226, 196)','rgb(66, 50, 31)','rgb(99, 80, 58)'],
+  ]) {
+    document.querySelector(`input[name="bam-palette"][value="${mode}"]`).click(); await tick();
+    check(getComputedStyle(readingRoot).backgroundColor === paper, 'paper color: ' + mode);
+    check(getComputedStyle(text).color === speech, 'speech color: ' + mode);
+    check(getComputedStyle(readingRoot.querySelector('.dc-narration-block')).color === narration, 'narration color: ' + mode);
+    check(document.querySelector('.dc-msg') === bubbleNode, 'palette change rebuilt bubbles');
+    check(getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width === originalAvatarSize, 'palette resized the avatar');
   }
+  document.querySelector('input[name="bam-reading-font"][value="system-ui"]').click(); await tick();
+  check(getComputedStyle(text).fontFamily.includes('system-ui'), 'reading font preview');
   const size = document.getElementById('bam-range-dialogue-font');
-  size.value = '20'; size.dispatchEvent(new Event('input')); await tick();
+  size.value = '20'; size.dispatchEvent(new Event('input', { bubbles:true })); await tick();
   check(getComputedStyle(text).fontSize === '20px', 'font size preview');
   manager.close(); await tick();
   check(getComputedStyle(text).fontSize === '14.5px', 'closing did not roll back unsaved size');
-  passes.push('PASS 切换角色色/全局色即时生效；未保存关闭恢复；样式预览保留气泡节点');
+  passes.push('PASS 三套阅读配色与字体即时生效；未保存关闭恢复；样式预览保留气泡节点');
   await app.openManager(); await manager._switchTab('mood');
   const promptEditor = document.getElementById('bam-prompt-template');
   check(!promptEditor.readOnly && promptEditor.value.includes('@say:'), 'editable prompt unavailable');

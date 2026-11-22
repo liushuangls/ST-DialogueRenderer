@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.1.3";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.1.3";
-import { createExtension } from "../src/extension.js?v=2.1.3";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.1.3";
+import { AvatarDB } from "../src/storage.js?v=2.2.0";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.0";
+import { createExtension } from "../src/extension.js?v=2.2.0";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.0";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -101,8 +101,8 @@ test('closing unsaved preview restores saved styles without refreshing fonts for
     let fontSyncs = 0; const syncFonts = f.app.assets.syncFonts.bind(f.app.assets);
     f.app.assets.syncFonts = (...args) => { fontSyncs++; return syncFonts(...args); };
     const input = doc.getElementById('bam-range-dialogue-font');
-    input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input')); await tick();
-    input.value = '21'; input.dispatchEvent(new f.dom.window.Event('input')); await tick();
+    input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
+    input.value = '21'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
     assert.equal(doc.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '21px');
     assert.equal(doc.querySelector('.dc-msg'), initialBubble);
     assert.equal(fontSyncs, 0);
@@ -120,11 +120,46 @@ test('saving styles commits the draft and closing restores the new saved baselin
   try {
     const manager = await f.app.openManager(); await manager._switchTab('style');
     const input = f.dom.window.document.getElementById('bam-range-dialogue-font');
-    input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input')); await tick();
+    input.value = '20'; input.dispatchEvent(new f.dom.window.Event('input', { bubbles:true })); await tick();
     await manager._saveCurrentStyleSettings(); manager.close(); await tick();
     assert.equal(await f.db.getConfig('style_dialogueFontSize'), 20);
     assert.equal(f.app.assets.settings.style_dialogueFontSize, 20);
     assert.equal(f.dom.window.document.querySelector('.mes_text').style.getPropertyValue('--bd-dialogue-size'), '20px');
+  } finally { await f.close(); }
+});
+
+test('palette and font choices preserve saved geometry, preview in place and round-trip through style backup', async () => {
+  const f = await fixture();
+  try {
+    await f.db.setConfig('style_avatarSize', 100);
+    await f.db.setConfig('style_narrationLineHeight', 2.15);
+    await f.db.setConfig('style_narrationFontSize', 17);
+    await f.app.refresh();
+    const manager = await f.app.openManager(); await manager._switchTab('style');
+    const doc = f.dom.window.document;
+    const root = doc.querySelector('.mes_text');
+    const bubble = root.querySelector('.dc-msg');
+    doc.querySelector('input[name="bam-palette"][value="parchment"]').click();
+    doc.querySelector('input[name="bam-reading-font"][value="BD LXGW WenKai"]').click();
+    assert.equal(root.style.getPropertyValue('--bd-paper'), '#EFE2C4');
+    assert.match(root.style.getPropertyValue('--bd-dialogue-font'), /BD LXGW WenKai/);
+    assert.equal(root.style.getPropertyValue('--bd-narration-size'), '17px');
+    assert.equal(root.style.getPropertyValue('--bd-avatar-size'), '100px');
+    assert.equal(root.querySelector('.dc-msg'), bubble);
+    manager.close(); await tick();
+    assert.equal(root.style.getPropertyValue('--bd-paper'), 'transparent');
+    await f.app.openManager(); await manager._switchTab('style');
+    doc.querySelector('input[name="bam-palette"][value="light"]').click();
+    doc.querySelector('input[name="bam-reading-font"][value="BD Noto Serif SC"]').click();
+    await manager._saveCurrentStyleSettings();
+    const backup = await f.db.exportStyleSettings();
+    assert.equal(backup.settings.style_textColorMode, 'light');
+    assert.equal(backup.settings.style_nameFontFamily, 'BD Noto Serif SC');
+    await f.db.setConfig('style_textColorMode', 'dark');
+    await f.db.importFromFile(new Blob([JSON.stringify(backup)]), '_global_');
+    assert.equal(await f.db.getConfig('style_textColorMode'), 'light');
+    assert.equal(await f.db.getConfig('style_narrationLineHeight'), 2.15);
+    assert.equal(await f.db.getConfig('style_avatarSize'), 100);
   } finally { await f.close(); }
 });
 
