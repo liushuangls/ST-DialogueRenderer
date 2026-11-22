@@ -1,9 +1,9 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, writeStyleSnapshot } from "./config.js?v=2.2.1";
-import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.1";
-import { applyStyles } from "./dom-renderer.js?v=2.2.1";
-import { STORE_AVATARS } from "./storage.js?v=2.2.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.1";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.1";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.2.2";
+import { GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.2.2";
+import { applyStyles } from "./dom-renderer.js?v=2.2.2";
+import { STORE_AVATARS } from "./storage.js?v=2.2.2";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.2.2";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.2.2";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];
@@ -618,16 +618,7 @@ class AvatarManagerPanel {
 
   async _applyBubblePreviewStyles(settings = this._styleDraft) {
     const sample = this._getMainDocument().getElementById('bam-reading-sample');
-    if (sample) {
-      applyStyles(sample, settings);
-      // The original palette can use dark text on a transparent chat surface.
-      // Give the sample its own contrasting paper inside the dark settings panel.
-      if (!Object.hasOwn(READING_PALETTES, settings.style_textColorMode)) {
-        const { r, g, b } = this._hexToRgb(settings.style_globalTextColor);
-        const lightInk = 0.213 * r + 0.715 * g + 0.072 * b > 128;
-        sample.style.setProperty('--bd-paper', lightInk ? '#212121' : '#faf9f5');
-      }
-    }
+    if (sample) applyStyles(sample, settings);
     const changes = Object.fromEntries(Object.entries(settings).filter(([key, value]) => value !== this._styleSavedBaseline[key]));
     await this.onPreview(changes);
   }
@@ -901,9 +892,8 @@ class AvatarManagerPanel {
 
     <div id="bam-tab-style" style="display:none; flex-direction:column; flex:1; overflow-y:auto; padding:16px 20px;">
       <fieldset class="bam-reading-field">
-        <legend>配色</legend>
+        <legend>阅读背景</legend>
         <div class="bam-reading-choices">
-          <label class="bam-reading-choice"><input type="radio" name="bam-palette" value="original">原配色</label>
           ${Object.entries(READING_PALETTES).map(([value, palette]) =>
             `<label class="bam-reading-choice" style="background:${palette.paper};color:${palette.speech}"><input type="radio" name="bam-palette" value="${value}">${palette.label}</label>`).join('')}
         </div>
@@ -1201,8 +1191,7 @@ class AvatarManagerPanel {
       const draft = this._styleDraft;
       const baseline = this._styleSavedBaseline;
       if (input.name === 'bam-palette') {
-        draft.style_textColorMode = input.value === 'original'
-          ? (baseline.style_textColorMode === 'character' ? 'character' : 'global') : input.value;
+        draft.style_textColorMode = input.value;
       } else if (input.name === 'bam-reading-font') {
         const original = selectedFont(baseline) === 'original' ? baseline : STYLE_DEFAULTS;
         for (const key of FONT_KEYS) draft[key] = input.value === 'original' ? original[key] : input.value;
@@ -1599,7 +1588,7 @@ class AvatarManagerPanel {
     const setChoice = (name, value) => {
       for (const input of doc.querySelectorAll(`input[name="${name}"]`)) input.checked = input.value === value;
     };
-    setChoice('bam-palette', Object.hasOwn(READING_PALETTES, settings.style_textColorMode) ? settings.style_textColorMode : 'original');
+    setChoice('bam-palette', readingPaletteId(settings));
     setChoice('bam-reading-font', selectedFont(settings));
     setChoice('bam-avatar-shape', settings.style_avatarShape);
     for (const [id, value, label] of [
@@ -1666,6 +1655,7 @@ class AvatarManagerPanel {
       'style_avatarSize', 'style_avatarShape', 'style_imageCompressEnabled', 'style_imageCompressQuality']) {
       this._styleDraft[key] = STYLE_DEFAULTS[key];
     }
+    this._styleDraft.style_textColorMode = readingPaletteId(STYLE_DEFAULTS);
     await this._showStyleDraft();
   }
 

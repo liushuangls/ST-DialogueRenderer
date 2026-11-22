@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.2.1";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.1";
-import { DialogueController } from "../src/controller.js?v=2.2.1";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.1";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.2.2";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.2";
+import { DialogueController } from "../src/controller.js?v=2.2.2";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.2.2";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -92,18 +92,16 @@ test('malformed completed markers report reasons without losing text; streaming 
   f.dom.window.close();
 });
 
-test('character colors are scoped variables so changing modes never leaves inline text colors', async () => {
+test('legacy text colors select a light or dark fixed palette, including character-color profiles', async () => {
   const f = fixture(); f.assets.settings.style_textColorMode = 'character';
   f.assets.resolve = async () => ({ color: '#ff0000' });
   const content = addMessage(f.document, 0, raw); const view = decorateMessage(content, f.assets); await tick();
-  assert.equal(content.dataset.bdColorMode, 'character');
-  assert.equal(content.querySelector('.dc-msg').style.getPropertyValue('--bd-character-color'), '#ff0000');
-  view.updateStyles({ ...STYLE_DEFAULTS, style_textColorMode: 'global', style_globalTextColor: '#000000' });
-  assert.equal(content.dataset.bdColorMode, 'global');
-  assert.equal(content.style.getPropertyValue('--bd-color'), '#000000');
-  assert.equal(content.querySelector('.dc-msg-text').style.color, '');
-  view.updateStyles({ ...STYLE_DEFAULTS, style_textColorMode: 'character' });
-  assert.equal(content.dataset.bdColorMode, 'character');
+  assert.equal(content.dataset.bdColorMode, 'dark');
+  assert.equal(content.style.getPropertyValue('--bd-speech-color'), '#EFEDE8');
+  view.updateStyles({ ...STYLE_DEFAULTS, style_textColorMode: 'global', style_globalTextColor: '#113311' });
+  assert.equal(content.dataset.bdColorMode, 'light');
+  assert.equal(content.style.getPropertyValue('--bd-speech-color'), '#2D2B27');
+  assert.equal(content.querySelector('.dc-ch').style.color, '');
   view.dispose(); f.dom.window.close();
 });
 
@@ -136,8 +134,7 @@ test('resource refresh updates avatars, mood mapping and colors in place and rem
   assert.equal(bubble.querySelector('img'), image);
   assert.equal(image.getAttribute('src'), '/second.png');
   assert.equal(bubble.dataset.moodGroup, 'new-group');
-  assert.equal(bubble.querySelector('.dc-msg-mood').style.color, 'rgb(0, 0, 255)');
-  assert.equal(bubble.style.getPropertyValue('--bd-character-color'), '');
+  assert.equal(bubble.querySelector('.dc-msg-mood').style.getPropertyValue('--bd-mood-accent'), '#0000ff');
   assert.notEqual(bubble.style.getPropertyValue('--bd-accent-color'), '#ff0000');
   assert.equal(content.style.getPropertyValue('--bd-dialogue-size'), '20px');
   f.assets.resolve = async () => ({}); f.assets.getMood = () => null;
@@ -145,7 +142,7 @@ test('resource refresh updates avatars, mood mapping and colors in place and rem
   assert.equal(bubble.querySelector('img'), null);
   assert.equal(bubble.querySelector('.dc-msg-avatar-ph').textContent, 'A');
   assert.equal(bubble.dataset.moodGroup, '');
-  assert.equal(bubble.querySelector('.dc-msg-mood').style.color, 'var(--bd-accent-color)');
+  assert.equal(bubble.querySelector('.dc-msg-mood').style.getPropertyValue('--bd-mood-accent'), 'var(--bd-accent-color)');
   view.dispose(); f.dom.window.close();
 });
 
@@ -157,7 +154,7 @@ test('an older avatar request cannot overwrite resources applied by a newer refr
   pending[1]({ avatar: '/new.png', color: '#0000ff' }); await tick();
   pending[0]({ avatar: '/old.png', color: '#ff0000' }); await tick();
   assert.equal(content.querySelector('img').getAttribute('src'), '/new.png');
-  assert.equal(content.querySelector('.dc-msg').style.getPropertyValue('--bd-character-color'), '#0000ff');
+  assert.equal(content.querySelector('.dc-msg').style.getPropertyValue('--bd-accent-color'), '#0000ff');
   view.dispose(); view.updateAssets();
   assert.equal(pending.length, 2);
   f.dom.window.close();

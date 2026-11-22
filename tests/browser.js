@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.2.1";
-import { AvatarDB } from "../src/storage.js?v=2.2.1";
-import { buildColorConfigKey } from "../src/context.js?v=2.2.1";
+import { createExtension } from "../src/extension.js?v=2.2.2";
+import { AvatarDB } from "../src/storage.js?v=2.2.2";
+import { buildColorConfigKey } from "../src/context.js?v=2.2.2";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -56,7 +56,8 @@ try {
   check(thought.querySelector('img'), 'base avatar missing');
   check(thought.querySelector('img').src !== document.querySelector('[data-mood-group="mood-calm"] img').src, 'mood avatar not distinguished');
   for (const node of document.querySelectorAll('h1.bd-narration,blockquote.bd-narration,.dc-msg-text')) {
-    check(getComputedStyle(node).color === 'rgb(41, 39, 36)', 'global color mismatch: ' + node.tagName);
+    const expected = node.matches('.dc-msg-text') ? 'rgb(45, 43, 39)' : 'rgb(83, 80, 75)';
+    check(getComputedStyle(node).color === expected, 'legacy palette mismatch: ' + node.tagName);
   }
   check(document.querySelectorAll('[data-thought="1"]').length === 3, 'italic speech misclassified');
   check(document.querySelector('[data-thought="0"] em')?.textContent === '我没事。', 'italic speech lost');
@@ -138,6 +139,9 @@ try {
     document.querySelector(`input[name="bam-palette"][value="${mode}"]`).click(); await tick();
     check(getComputedStyle(readingRoot).backgroundColor === paper, 'paper color: ' + mode);
     check(getComputedStyle(text).color === speech, 'speech color: ' + mode);
+    const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
+    check(getComputedStyle(bubbleNode.querySelector('.dc-ch')).color === nameColor, 'name color: ' + mode);
+    check(getComputedStyle(bubbleNode.querySelector('.dc-msg-quote')).color === speech, 'quote color: ' + mode);
     check(getComputedStyle(readingRoot.querySelector('.dc-narration-block')).color === narration, 'narration color: ' + mode);
     check(document.querySelector('.dc-msg') === bubbleNode, 'palette change rebuilt bubbles');
     check(getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width === originalAvatarSize, 'palette resized the avatar');

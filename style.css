@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.2.1');
-@import url('./src/reading-fonts.css?v=2.2.1');
+@import url('./src/bubble-style.css?v=2.2.2');
+@import url('./src/reading-fonts.css?v=2.2.2');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -55,7 +55,7 @@
 }
 #bam-panel .bam-prompt-button { padding:8px 22px; border:1px solid #ffffff26; border-radius:6px; background:#4a6cf7; color:#fff; cursor:pointer }
 
-.bd-content:is([data-bd-color-mode="light"],[data-bd-color-mode="dark"],[data-bd-color-mode="parchment"]) {
+.bd-content {
   background-color:var(--bd-paper); color:var(--bd-color);
 }
 .bd-content .bd-segment { margin:0; padding:0 }
@@ -67,9 +67,9 @@
   color:var(--bd-speech-color); font-size:var(--bd-dialogue-size); font-weight:var(--bd-dialogue-weight);
   line-height:var(--bd-dialogue-line-height); font-family:var(--bd-dialogue-font);
 }
-.bd-content[data-bd-color-mode="character"] .dc-msg-text { color:var(--bd-character-color, var(--bd-color)) }
+.bd-content .dc-msg-mood { color:var(--bd-name-color) }
 .bd-content .dc-msg-text :is(em,i,strong,q,code,a,span) { color:inherit }
-.bd-content .dc-msg-text .dc-msg-quote { color:var(--bd-color) }
+.bd-content .dc-msg-text .dc-msg-quote { color:var(--bd-speech-color) }
 .bd-content .dc-msg-name { color:var(--bd-name-color); font-weight:var(--bd-name-weight); font-family:var(--bd-name-font) }
 .bd-content .dc-msg-avatar { width:var(--bd-avatar-size); height:var(--bd-avatar-size); border-radius:var(--bd-avatar-radius) }
 .bd-content .dc-msg-avatar :is(img,.dc-msg-avatar-ph) { border-radius:var(--bd-avatar-radius) }
@@ -78,7 +78,7 @@
   color:var(--bd-narration-color); font-family:var(--bd-narration-font); font-size:var(--bd-narration-size);
   font-weight:var(--bd-narration-weight); line-height:var(--bd-narration-line-height);
   padding-left:var(--bd-narration-left); padding-right:var(--bd-narration-right);
-  background:var(--bd-background); border-radius:var(--bd-narration-radius); text-shadow:none;
+  background:transparent; border-radius:var(--bd-narration-radius); text-shadow:none;
 }
 .bd-content :is(.dc-narration-block,.bd-narration) :is(p,h1,h2,h3,h4,h5,h6,em,q,blockquote,a,code,strong,li,th,td) { color:inherit }
 .bd-content .dc-narration-block p,.bd-content p.bd-narration { text-indent:var(--bd-indent) }

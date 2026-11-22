@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS } from "./config.js?v=2.2.1";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.1";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.2.2";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.2.2";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 const PROTECTED = 'pre,code,iframe,script,style,custom-style,details,table,textarea,button,audio,video,[data-bd-owned],.mes_reasoning';
@@ -87,7 +87,6 @@ function renderName(doc, name) {
   const holder = element(doc, 'span', 'dc-msg-name');
   [...name].forEach((letter, index) => {
     const span = element(doc, 'span', index === 0 ? 'dc-ch' : index === 2 ? 'dc-cs' : 'dc-cn', letter);
-    if (index === 0 || index === 2) span.style.color = 'var(--bd-accent-color)';
     holder.append(span);
   });
   return holder;
@@ -110,13 +109,12 @@ function bubble(doc, parsed, line, assets, isAlive) {
   const heading = element(doc, 'div', 'dc-msg-header');
   const name = renderName(doc, parsed.name);
   const mood = element(doc, 'span', 'dc-msg-mood', parsed.mood);
-  mood.style.background = 'color-mix(in srgb, currentColor 15%, transparent)';
+  mood.style.background = 'color-mix(in srgb, var(--bd-mood-accent) 15%, transparent)';
   heading.append(name, mood);
   const text = element(doc, 'div', 'dc-msg-text');
   const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
   body.append(range ? cloneInline(range) : doc.createTextNode(parsed.text));
   const quote = element(doc, 'span', 'dc-msg-quote' + (thought ? ' dc-msg-quote-thought' : ''), thought ? '＊' : '”');
-  quote.style.color = 'var(--bd-accent-color)';
   text.append(body, quote);
   msg.append(avatar, heading, text);
   let assetRevision = 0;
@@ -129,7 +127,7 @@ function bubble(doc, parsed, line, assets, isAlive) {
     const moodColor = group?.color || 'var(--bd-accent-color)';
     if (msg.dataset.moodGroup !== groupId) msg.dataset.moodGroup = groupId;
     if (mood.dataset.moodMapped !== mapped) mood.dataset.moodMapped = mapped;
-    if (appliedMoodColor !== moodColor) { mood.style.color = moodColor; appliedMoodColor = moodColor; }
+    if (appliedMoodColor !== moodColor) { mood.style.setProperty('--bd-mood-accent', moodColor); appliedMoodColor = moodColor; }
     assets.resolve(parsed.name, parsed.mood).then(resolved => {
       if (!isAlive() || revision !== assetRevision) return;
       if (resolved.avatar) {
@@ -141,9 +139,7 @@ function bubble(doc, parsed, line, assets, isAlive) {
       } else if (avatar.firstElementChild !== placeholder) avatar.replaceChildren(placeholder);
       const accentColor = resolved.color || color;
       if (msg.style.getPropertyValue('--bd-accent-color') !== accentColor) msg.style.setProperty('--bd-accent-color', accentColor);
-      if (resolved.color) {
-        if (msg.style.getPropertyValue('--bd-character-color') !== resolved.color) msg.style.setProperty('--bd-character-color', resolved.color);
-      } else if (msg.style.getPropertyValue('--bd-character-color')) msg.style.removeProperty('--bd-character-color');
+
     }).catch(error => { if (isAlive() && revision === assetRevision) assets.onError(error); });
   }
   updateAssets();
@@ -151,18 +147,19 @@ function bubble(doc, parsed, line, assets, isAlive) {
 }
 
 export function applyStyles(root, settings) {
-  if (root.dataset.bdColorMode !== settings.style_textColorMode) root.dataset.bdColorMode = settings.style_textColorMode;
+  const mode = readingPaletteId(settings);
+  if (root.dataset.bdColorMode !== mode) root.dataset.bdColorMode = mode;
   const px = (key, fallback) => Number.isFinite(Number(settings[key])) ? Number(settings[key]) + 'px' : fallback;
-  const palette = READING_PALETTES[settings.style_textColorMode];
+  const palette = READING_PALETTES[mode];
   const fonts = key => READING_FONTS[settings[key]]?.stack ?? (JSON.stringify(settings[key]) + ',system-ui,sans-serif');
   const size = Math.min(120, Math.max(36, Number(settings.style_avatarSize)));
   const radius = settings.style_avatarShape === 'circle' ? '50%' : settings.style_avatarShape === 'square' ? '0px' : '8px';
   const css = {
-    '--bd-color': palette?.ink ?? settings.style_globalTextColor,
-    '--bd-paper': palette?.paper ?? 'transparent',
-    '--bd-narration-color': palette?.narration ?? settings.style_globalTextColor,
-    '--bd-speech-color': palette?.speech ?? settings.style_globalTextColor,
-    '--bd-name-color': palette?.name ?? settings.style_globalTextColor,
+    '--bd-color': palette.ink,
+    '--bd-paper': palette.paper,
+    '--bd-narration-color': palette.narration,
+    '--bd-speech-color': palette.speech,
+    '--bd-name-color': palette.name,
     '--bd-narration-size': px('style_narrationFontSize', '14px'),
     '--bd-dialogue-size': px('style_dialogueFontSize', '14.5px'),
     '--bd-narration-weight': settings.style_narrationFontWeight,
@@ -178,7 +175,7 @@ export function applyStyles(root, settings) {
     '--bd-narration-right': px('style_narrationPaddingRight', '16px'),
     '--bd-narration-radius': px('style_narrationBorderRadius', '0px'),
     '--bd-indent': Number(settings.style_narrationTextIndent) + 'em',
-    '--bd-background': palette ? 'transparent' : `color-mix(in srgb, ${settings.style_narrationBgColor} ${Number(settings.style_narrationBgOpacity) * 100}%, transparent)`,
+
     '--bd-avatar-size': size + 'px', '--bd-avatar-radius': radius,
     '--bd-message-left': (size + 24) + 'px', '--bd-message-min-height': Math.max(56, size + 4) + 'px',
     '--bd-placeholder-size': Math.max(16, Math.round(size * 0.38)) + 'px',

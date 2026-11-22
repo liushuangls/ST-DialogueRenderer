@@ -22,6 +22,18 @@ export const READING_PALETTES = {
   dark: { label: '黑夜', paper: '#2C2C2C', ink: '#E0DDD8', narration: '#CFCBC4', speech: '#EFEDE8', name: '#FFFFFF' },
   parchment: { label: '羊皮卷', paper: '#EFE2C4', ink: '#4E3C27', narration: '#63503A', speech: '#42321F', name: '#000000' },
 };
+// Older profiles stored a shared or per-character ink color. Use its
+// brightness to choose the corresponding paper without rewriting their backup.
+export function readingPaletteId(settings) {
+  const mode = settings.style_textColorMode;
+  if (Object.hasOwn(READING_PALETTES, mode)) return mode;
+  if (mode !== 'global' && mode !== 'character') throw new Error('未知阅读配色：' + mode);
+  const hex = String(settings.style_globalTextColor).trim().replace(/^#([\da-f])([\da-f])([\da-f])$/i, '#$1$1$2$2$3$3');
+  if (!/^#[\da-f]{6}$/i.test(hex)) throw new Error('旧版正文字色无效：' + hex);
+  const [r, g, b] = hex.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+  return 0.213 * r + 0.715 * g + 0.072 * b > 128 ? 'dark' : 'light';
+}
+
 export const READING_FONTS = {
   'system-ui': { label: '系统黑体', stack: 'system-ui, sans-serif' },
   'BD Noto Serif SC': { label: '思源宋体', stack: '"Noto Serif SC", "Source Han Serif SC", "BD Noto Serif SC", serif' },

@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.2.1";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.1";
-import { createExtension } from "../src/extension.js?v=2.2.1";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.1";
+import { AvatarDB } from "../src/storage.js?v=2.2.2";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.2.2";
+import { createExtension } from "../src/extension.js?v=2.2.2";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.2.2";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));
@@ -147,7 +147,7 @@ test('palette and font choices preserve saved geometry, preview in place and rou
     assert.equal(root.style.getPropertyValue('--bd-avatar-size'), '100px');
     assert.equal(root.querySelector('.dc-msg'), bubble);
     manager.close(); await tick();
-    assert.equal(root.style.getPropertyValue('--bd-paper'), 'transparent');
+    assert.equal(root.style.getPropertyValue('--bd-paper'), '#2C2C2C');
     await f.app.openManager(); await manager._switchTab('style');
     doc.querySelector('input[name="bam-palette"][value="light"]').click();
     doc.querySelector('input[name="bam-reading-font"][value="BD Noto Serif SC"]').click();
