@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.1";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.1";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.2";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.2";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
@@ -101,9 +101,7 @@ export function createDialogueRow(doc, name, type, content) {
   const text = element(doc, 'div', 'dc-msg-text');
   const body = element(doc, 'span', 'dc-msg-text-content' + (thought ? ' dc-msg-text-content-thought' : ''));
   body.append(content);
-  const alreadyQuoted = /^「[\s\S]*」$/.test(body.textContent.trim());
-  if (thought || alreadyQuoted) text.append(body);
-  else text.append('「', body, '」');
+  text.append(body);
   msg.append(speaker, text);
   return { node: msg, avatar, placeholder };
 }

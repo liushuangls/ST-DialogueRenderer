@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.6.1";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.1";
-import { DialogueController } from "../src/controller.js?v=2.6.1";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.6.1";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.6.2";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.2";
+import { DialogueController } from "../src/controller.js?v=2.6.2";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.6.2";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -44,7 +44,7 @@ test('explicit speech/thought types preserve rich text, avatars and exact DOM re
   assert.equal(content.querySelector('[data-mood-group="mood-calm"] img').src, 'https://example.test/calm.png');
   assert.equal(content.querySelector('[data-mood-group=""] img').src, 'https://example.test/base.png');
   assert.doesNotMatch(content.textContent, /欲言又止|平静/);
-  assert.equal(content.querySelector('[data-thought="0"] .dc-msg-text').textContent, '「说出口的话」');
+  assert.equal(content.querySelector('[data-thought="0"] .dc-msg-text').textContent, '说出口的话');
   assert.ok(content.querySelector('h1').classList.contains('bd-narration'));
   assert.equal(content.querySelectorAll('iframe').length, 0);
   view.dispose();

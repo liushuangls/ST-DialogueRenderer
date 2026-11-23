@@ -1,7 +1,7 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.1";
-import { groupedAvatarPool, poolPortraitUrl, portraitNameFromFile } from "./avatar-pool.js?v=2.6.1";
-import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.6.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.1";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.2";
+import { groupedAvatarPool, poolPortraitUrl, portraitNameFromFile } from "./avatar-pool.js?v=2.6.2";
+import { groupEdits, poolGroups, UNGROUPED } from "./pool-groups.js?v=2.6.2";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.2";
 
 function newId() {
   return Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');

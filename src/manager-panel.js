@@ -1,13 +1,13 @@
-import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.6.1";
-import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.6.1";
-import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.6.1";
-import { STORE_AVATARS } from "./storage.js?v=2.6.1";
-import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.1";
-import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.6.1";
+import { DEFAULT_MOOD_GROUPS, MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, READING_PALETTES, READING_FONTS, readingPaletteId, writeStyleSnapshot } from "./config.js?v=2.6.2";
+import { AVATAR_POOL_SCOPE, GLOBAL_CHAR_ID, CHAR_ID_SEPARATOR, getCurrentCharId, getCurrentCharName, buildAvatarKey, buildColorConfigKey, extractDisplayName } from "./context.js?v=2.6.2";
+import { applyStyles, createDialogueRow, setDialogueAvatar } from "./dom-renderer.js?v=2.6.2";
+import { STORE_AVATARS } from "./storage.js?v=2.6.2";
+import { compressImage, getCompressOptions } from "./image-utils.js?v=2.6.2";
+import { buildDefaultPrompt, loadPromptSettings } from "./protocol.js?v=2.6.2";
 
-import { bindPoolPicker, bindPoolManager } from "./pool-picker.js?v=2.6.1";
+import { bindPoolPicker, bindPoolManager } from "./pool-picker.js?v=2.6.2";
 
-import { portraitNameFromFile } from "./avatar-pool.js?v=2.6.1";
+import { portraitNameFromFile } from "./avatar-pool.js?v=2.6.2";
 
 const SCRIPT_DISPLAY_NAME = '对话渲染系统';
 const FONT_KEYS = ['style_narrationFontFamily', 'style_dialogueFontFamily', 'style_nameFontFamily'];

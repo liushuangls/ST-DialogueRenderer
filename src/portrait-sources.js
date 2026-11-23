@@ -19,7 +19,7 @@ export async function contentId(blob) {
     return Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
   }
   // Local HTTP installations do not expose WebCrypto.
-  const { sha256 } = await import("./sha256.js?v=2.6.1");
+  const { sha256 } = await import("./sha256.js?v=2.6.2");
   return sha256(bytes);
 }
 

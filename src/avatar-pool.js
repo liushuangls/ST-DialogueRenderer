@@ -1,6 +1,6 @@
-import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.1";
+import { AVATAR_POOL_SCOPE } from "./context.js?v=2.6.2";
 
-import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.6.1";
+import { poolGroups, POOL_LAYOUT_KEY, UNGROUPED } from "./pool-groups.js?v=2.6.2";
 
 const series = [
   ['simple', 's', ['灰紫', '青绿', '陶红', '草绿', '藤紫', '琥珀', '赭石', '玫瑰', '靛蓝', '湖蓝']],

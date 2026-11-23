@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.6.1";
-import { AvatarDB } from "../src/storage.js?v=2.6.1";
-import { buildColorConfigKey } from "../src/context.js?v=2.6.1";
+import { createExtension } from "../src/extension.js?v=2.6.2";
+import { AvatarDB } from "../src/storage.js?v=2.6.2";
+import { buildColorConfigKey } from "../src/context.js?v=2.6.2";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -161,7 +161,7 @@ try {
     check(bubbleRect.right <= row.getBoundingClientRect().right, 'bubble overflowed the row');
   }
   const longSpeech = story.querySelector('[data-name="茶馆老板娘"] .dc-msg-text');
-  check(longSpeech.offsetHeight > (narrow ? 40 : 48) && !longSpeech.textContent.startsWith('「「'), 'long quoted dialogue');
+  check(longSpeech.offsetHeight > (narrow ? 40 : 48) && longSpeech.textContent === '「' + '天色已经放晴了。'.repeat(18) + '」', 'long quoted dialogue');
   const originalAvatarSize = getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width;
   for (const [mode, paper, speech, narration, border] of [
     ['light','rgb(250, 249, 245)','rgb(45, 43, 39)','rgb(83, 80, 75)','rgba(83, 80, 75, 0.26)'],
@@ -187,7 +187,7 @@ try {
     check(portrait?.naturalWidth > 0 && /\/assets\/portraits\/s\d{2}\.png$/.test(new URL(portrait.src).pathname) && getComputedStyle(portrait).width === originalAvatarSize, 'automatic pool portrait: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
-    check(text.textContent.startsWith('「') && text.textContent.endsWith('」'), 'speech punctuation');
+    check(text.textContent === '这里显示的是显示正则已生效', 'speech punctuation');
     check(getComputedStyle(readingRoot.querySelector('.dc-narration-block')).color === narration, 'narration color: ' + mode);
     check(story.querySelector('.dc-msg') === bubbleNode, 'palette change rebuilt bubbles');
     check(getComputedStyle(bubbleNode.querySelector('.dc-msg-avatar')).width === originalAvatarSize, 'palette resized the avatar');
