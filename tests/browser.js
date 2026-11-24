@@ -1,6 +1,6 @@
-import { createExtension } from "../src/extension.js?v=2.6.2";
-import { AvatarDB } from "../src/storage.js?v=2.6.2";
-import { buildColorConfigKey } from "../src/context.js?v=2.6.2";
+import { createExtension } from "../src/extension.js?v=2.6.3";
+import { AvatarDB } from "../src/storage.js?v=2.6.3";
+import { buildColorConfigKey } from "../src/context.js?v=2.6.3";
 
 const output = document.getElementById('result');
 const passes = [];
@@ -123,11 +123,13 @@ try {
   if (chatStyle === null) chatElement.removeAttribute('style'); else chatElement.setAttribute('style', chatStyle);
   await db.setConfig('style_avatarSize', avatarSize); await app.assets.refresh();
   document.getElementById('chat').replaceChildren(); context.chat.length = 0;
-  const story = addMessage(raw + '\n\n@say:茶馆老板娘|温和|「' + '天色已经放晴了。'.repeat(18) + '」');
+  const story = addMessage('首段测试。\n\n***\n\n' + raw + '\n\n@say:茶馆老板娘|温和|「' + '天色已经放晴了。'.repeat(18) + '」');
   story.insertAdjacentHTML('afterbegin',
     '<div class="TH-render"><details open><summary>吾乃小猫之神…</summary><p>@think:示例|平静|思考过程</p></details><iframe title="思考栏"></iframe></div>');
   const reasoning = story.querySelector('.TH-render');
   const reasoningFrame = reasoning.querySelector('iframe');
+  const opening = reasoning.nextElementSibling;
+  opening.prepend(document.createElement('br'), document.createElement('br'));
   const hostColor = getComputedStyle(reasoning).color;
   const hostBackground = getComputedStyle(story).backgroundColor;
   await app.setSettings({ enabled: true, recentAiCount: 3 }); await tick();
@@ -145,6 +147,11 @@ try {
     check(style.fontFamily.includes('WenQuanYi Zen Hei') && style.fontWeight === '400', 'default reading font');
     check(parseFloat(style.fontSize) === fontSize && Math.abs(parseFloat(style.lineHeight) - lineHeight) < 0.01, 'default reading metrics');
   }
+  const firstGlyph = document.createRange();
+  firstGlyph.setStart(opening.lastChild, 0); firstGlyph.setEnd(opening.lastChild, 1);
+  const inset = firstGlyph.getBoundingClientRect().left - opening.getBoundingClientRect().left - parseFloat(getComputedStyle(opening).paddingLeft);
+  check(Math.abs(inset - 34) < 1, 'first visible character must have the two-em indentation');
+  const divider = story.querySelector('hr.bd-narration');
   check(getComputedStyle(paragraph).textIndent === '34px' && getComputedStyle(paragraph).textAlign === 'justify', 'narration alignment');
   check(getComputedStyle(paragraph.parentElement).paddingLeft === (matchMedia('(max-width:480px)').matches ? '12px' : '20px'), 'page inset');
   check(getComputedStyle(name).fontSize === '11px' && getComputedStyle(name).fontWeight === '400' && getComputedStyle(name).lineHeight === '13.75px', 'speaker name metrics');
@@ -185,6 +192,8 @@ try {
     }
     const portrait = story.querySelector('[data-name="茶馆老板娘"] .dc-msg-avatar img');
     check(portrait?.naturalWidth > 0 && /\/assets\/portraits\/s\d{2}\.png$/.test(new URL(portrait.src).pathname) && getComputedStyle(portrait).width === originalAvatarSize, 'automatic pool portrait: ' + mode);
+    const rule = getComputedStyle(divider);
+    check(rule.paddingBottom === '0px' && rule.backgroundSize.includes('1px') && rule.backgroundColor === paper, 'scene break: ' + mode);
     const nameColor = mode === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(0, 0, 0)';
     check(getComputedStyle(name).color === nameColor, 'name color: ' + mode);
     check(text.textContent === '这里显示的是显示正则已生效', 'speech punctuation');

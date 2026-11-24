@@ -1,5 +1,5 @@
-import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.2";
-import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.2";
+import { READING_PALETTES, READING_FONTS, readingPaletteId } from "./config.js?v=2.6.3";
+import { parseDialogueLine, isDialogueCandidate } from "./protocol.js?v=2.6.3";
 
 const BLOCKS = new Set(['P', 'DIV', 'BLOCKQUOTE', 'LI']);
 export const PROTECTED_VIEWS = 'pre,iframe,details,[data-bd-owned],.mes_reasoning,.TH-render,.xiaobaix-iframe-wrapper';
@@ -62,6 +62,16 @@ function cloneInline(range) {
     parent = parent.parentElement;
   }
   return fragment;
+}
+
+// Leading BRs left by host formatting would otherwise consume the first-line indent.
+function markLeadingBreaks(paragraph, token) {
+  if (paragraph.firstElementChild?.tagName !== 'BR' || !paragraph.textContent.trim()) return;
+  for (const child of paragraph.childNodes) {
+    if (child.nodeType === 8 || (child.nodeType === 3 && /^[\t\n\r\f ]*$/.test(child.data))) continue;
+    if (child.nodeName !== 'BR') break;
+    child.dataset.bdLeadingBreak = token;
+  }
 }
 
 function candidates(root) {
@@ -263,6 +273,7 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
         node.classList.add('bd-narration');
         node.dataset.bdNarration = token;
         marked.push({ node, hadClass, token });
+        if (node.tagName === 'P') markLeadingBreaks(node, token);
       }
     }
   } catch (error) {
@@ -286,6 +297,7 @@ export function decorateMessage(root, assets, { signal, streaming = false } = {}
     for (const { node, hadClass, token } of marked) {
       const copies = new Set([node, ...roots.flatMap(target => [...target.querySelectorAll(`[data-bd-narration="${token}"]`)])]);
       for (const copy of copies) {
+        for (const br of copy.querySelectorAll(`br[data-bd-leading-break="${token}"]`)) br.removeAttribute('data-bd-leading-break');
         copy.classList.remove('bd-narration');
         copy.removeAttribute('data-bd-narration');
         if (!hadClass && !copy.className) copy.removeAttribute('class');

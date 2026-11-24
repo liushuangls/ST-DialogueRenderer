@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import showdown from 'showdown';
-import { decorateMessage } from "../src/dom-renderer.js?v=2.6.2";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.2";
-import { DialogueController } from "../src/controller.js?v=2.6.2";
-import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.6.2";
+import { decorateMessage } from "../src/dom-renderer.js?v=2.6.3";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.3";
+import { DialogueController } from "../src/controller.js?v=2.6.3";
+import { recentAiMessageIds, readSettings } from "../src/settings.js?v=2.6.3";
 
 const converter = new showdown.Converter({ simpleLineBreaks: true, tables: true });
 function fixture() {
@@ -82,6 +82,24 @@ test('code examples and embedded frontend nodes are not claimed or restyled', ()
   const codeHtml = content.outerHTML;
   const codeOnly = decorateMessage(content, f.assets);
   assert.equal(content.outerHTML, codeHtml); assert.equal(codeOnly.count, 0);
+  f.dom.window.close();
+});
+
+test('opening narration skips initial empty lines but keeps interior breaks and restores the original HTML', () => {
+  const f = fixture();
+  const content = addMessage(f.document, 0, raw);
+  content.insertAdjacentHTML('afterbegin', '<details><p><br>思考</p><hr></details><p>\n<br> <br><em>第一段</em><br>另起一行</p><p>第二段<br>续行</p><p><br></p><hr>');
+  const before = content.innerHTML;
+  const view = decorateMessage(content, f.assets);
+  const first = content.querySelector('p.bd-narration');
+  assert.deepEqual([...first.querySelectorAll('br')].map(br => br.hasAttribute('data-bd-leading-break')), [true,true,false]);
+  assert.equal(content.querySelectorAll('[data-bd-leading-break]').length, 2);
+  assert.ok(content.querySelector(':scope > hr.bd-narration'));
+  assert.equal(content.querySelector('details hr').className, '');
+  const copy = content.cloneNode(true);
+  view.dispose({ replacementRoot:copy });
+  assert.equal(content.innerHTML, before);
+  assert.equal(copy.innerHTML, before);
   f.dom.window.close();
 });
 

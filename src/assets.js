@@ -1,8 +1,8 @@
-import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.6.2";
-import { GLOBAL_CHAR_ID, getCurrentCharId, getCurrentContext } from "./context.js?v=2.6.2";
-import { FontCatalog } from "./fonts.js?v=2.6.2";
+import { DEFAULT_MOOD_GROUPS, STYLE_DEFAULTS, readingSettings, normalizeMoodConfig } from "./config.js?v=2.6.3";
+import { GLOBAL_CHAR_ID, getCurrentCharId, getCurrentContext } from "./context.js?v=2.6.3";
+import { FontCatalog } from "./fonts.js?v=2.6.3";
 
-import { groupedAvatarPool, pickPoolAvatar, poolPortraitUrl } from "./avatar-pool.js?v=2.6.2";
+import { groupedAvatarPool, pickPoolAvatar, poolPortraitUrl } from "./avatar-pool.js?v=2.6.3";
 
 export class RenderAssets {
   constructor(db, { onError = console.error, fonts = new FontCatalog() } = {}) {

@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { AvatarDB } from "../src/storage.js?v=2.6.2";
-import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.2";
-import { createExtension } from "../src/extension.js?v=2.6.2";
-import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.6.2";
+import { AvatarDB } from "../src/storage.js?v=2.6.3";
+import { STYLE_DEFAULTS } from "../src/config.js?v=2.6.3";
+import { createExtension } from "../src/extension.js?v=2.6.3";
+import { AvatarSync, GlobalStyleSync } from "../src/sync.js?v=2.6.3";
 
-import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.6.2";
-import { BUILTIN_PORTRAITS, groupedAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.6.2";
+import { AVATAR_POOL_SCOPE, getCurrentCharId } from "../src/context.js?v=2.6.3";
+import { BUILTIN_PORTRAITS, groupedAvatarPool, pickPoolAvatar } from "../src/avatar-pool.js?v=2.6.3";
 
 const PROMPT_ID = 'dialogue-renderer/protocol';
 const tick = () => new Promise(resolve => setTimeout(resolve, 40));

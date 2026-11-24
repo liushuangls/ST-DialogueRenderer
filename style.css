@@ -1,5 +1,5 @@
-@import url('./src/bubble-style.css?v=2.6.2');
-@import url('./src/reading-fonts.css?v=2.6.2');
+@import url('./src/bubble-style.css?v=2.6.3');
+@import url('./src/reading-fonts.css?v=2.6.3');
 
 .bd-settings .bd-switch-card {
   box-sizing:border-box; display:flex; align-items:center; justify-content:space-between;
@@ -80,6 +80,20 @@
 .bd-content .bd-segment:has(+ .bd-segment > .dc-msg:first-child) > .dc-msg:last-child { margin-bottom:2px }
 .bd-content :is(.dc-narration-block,.bd-narration) :is(p,h1,h2,h3,h4,h5,h6,em,q,blockquote,a,code,strong,li,th,td) { color:inherit }
 .bd-content .dc-narration-block p,.bd-content p.bd-narration { text-indent:var(--bd-indent) }
+.bd-content p.bd-narration > br[data-bd-leading-break] { display:none }
+
+/* A Markdown scene break tracks the reading palette and keeps the paper continuous. */
+.mes_text.bd-content hr.bd-narration[data-bd-narration],
+.bd-content :is(.dc-narration-block,.bd-narration) hr {
+  --bd-rule-ink:color-mix(in srgb, var(--bd-narration-color) 45%, var(--bd-paper));
+  box-sizing:border-box; display:grid; place-items:center; width:100%; max-width:none; height:1.5em;
+  margin:0; padding:0; border:0; border-radius:0; box-shadow:none; opacity:1;
+  background:linear-gradient(90deg,transparent,var(--bd-rule-ink),transparent) center / min(50%,14rem) 1px no-repeat var(--bd-paper);
+}
+.bd-content hr.bd-narration::after, .bd-content :is(.dc-narration-block,.bd-narration) hr::after {
+  content:''; box-sizing:border-box; width:5px; height:5px; border:1px solid var(--bd-rule-ink);
+  background:var(--bd-paper); box-shadow:0 0 0 3px var(--bd-paper); transform:rotate(45deg);
+}
 .bd-content :is(h1,h2,h3,h4,h5,h6).bd-narration { font-weight:700 }
 .bd-content h1.bd-narration { font-size:calc(var(--bd-narration-size) * 1.4) }
 .bd-content h2.bd-narration { font-size:calc(var(--bd-narration-size) * 1.25) }
